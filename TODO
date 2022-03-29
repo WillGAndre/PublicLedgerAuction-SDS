@@ -1,0 +1,14 @@
+(Kademlia)
+    - Finish make_response()
+        \
+         --> Start with find_node response then
+             find_value.
+             
+    - Finish find_node()
+
+
+----
+
+129101110515091911611491272665102167187172148143170208
+
+106124511902182111543092254189301051261522411477818185

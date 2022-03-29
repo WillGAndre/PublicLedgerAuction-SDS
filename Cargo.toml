@@ -1,0 +1,16 @@
+[package]
+name = "kad"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+log = "*"
+rust-crypto = "*"
+rand = "*"
+hex = "*"
+serde = {version="*", features=["derive"]}
+serde_json = "*"
+sha2 = "*"
+crossbeam-channel = "*"
