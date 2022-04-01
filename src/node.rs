@@ -29,31 +29,6 @@ impl Node {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Eq, Hash, Debug)]
-pub struct NodeWithDistance(pub Node, pub Distance);
-
-// ONLY DISTANCE IS COMPARED
-impl Ord for NodeWithDistance {
-    fn cmp(&self, other: &NodeWithDistance) -> Ordering {
-        self.1.cmp(&other.1)
-    }
-}
-impl PartialOrd for NodeWithDistance {
-    fn partial_cmp(&self, other: &NodeWithDistance) -> Option<Ordering> {
-        Some(self.1.cmp(&other.1))
-    }
-}
-impl PartialEq for NodeWithDistance {
-    fn eq(&self, other: &NodeWithDistance) -> bool {
-        for i in 0..KEY_LEN {
-            if self.1.0[i] != other.1.0[i] {
-                return false
-            }
-        }
-        true
-    }
-}
-
 #[derive(Clone, Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq, Copy, Hash)]
 pub struct Distance(pub [u8; KEY_LEN]);
 
@@ -79,7 +54,45 @@ impl Debug for Distance {
         }
         Ok(())
     }
-} 
+}
+impl Binary for Distance {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+        for x in &self.0 {
+            match write!(f, "{:08b}", x) {
+                Ok(_) => {}
+                Err(e) => {
+                    info!("Error writing distance as binary: {}", e)
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, Eq, Hash, Debug)]
+pub struct NodeWithDistance(pub Node, pub Distance);
+
+// ONLY DISTANCE IS COMPARED
+impl Ord for NodeWithDistance {
+    fn cmp(&self, other: &NodeWithDistance) -> Ordering {
+        self.1.cmp(&other.1)
+    }
+}
+impl PartialOrd for NodeWithDistance {
+    fn partial_cmp(&self, other: &NodeWithDistance) -> Option<Ordering> {
+        Some(self.1.cmp(&other.1))
+    }
+}
+impl PartialEq for NodeWithDistance {
+    fn eq(&self, other: &NodeWithDistance) -> bool {
+        for i in 0..KEY_LEN {
+            if self.1.0[i] != other.1.0[i] {
+                return false
+            }
+        }
+        true
+    }
+}
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Key(pub [u8; KEY_LEN]);
@@ -113,14 +126,13 @@ impl Debug for Key {
         Ok(())
     }
 }
-
 impl Binary for Key {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
         for x in &self.0 {
             match write!(f, "{:08b}", x) {
                 Ok(_) => {}
                 Err(e) => {
-                    info!("Error debuging key: {}", e)
+                    info!("Error writing key as binary: {}", e)
                 }
             }
         }

@@ -17,7 +17,6 @@ use std::str;
 #[derive(Debug, Clone)]
 pub struct Bucket {
     pub nodes: Vec<Node>,
-    pub capacity: usize,
 }
 
 /**
@@ -41,7 +40,7 @@ pub struct KademliaInstance {
 
 impl Bucket {
     pub fn new() -> Self {
-        Self { nodes: Vec::new(), capacity: K_PARAM }
+        Self { nodes: Vec::with_capacity(K_PARAM) }
     }
 }
 
@@ -113,17 +112,31 @@ impl RoutingTable {
                     self.kbuckets[bucketindex].nodes.push(node);
                 },
                 None => {
-                    println!("{} routing table update: new node ( {} )", self.node.get_addr(), &node.get_node());
+                    //println!("{} routing table update: new node ( {} )", self.node.get_addr(), &node.get_node());
                     self.kbuckets[bucketindex].nodes.push(node);
                 },
             }
         }
     }
 
-    // Returns nodes from kbucket sorted by distance (NodeWithDistance)
+    /*
+     * Returns distance of node(s) in the bucket
+     * with the key supplied as argument.
+     *  Assume that both kad instances hold node1
+     *  and node2, Example:
+     *   kad1.query_node(node1, node2.id)
+     *      \
+     *       rt1.get_closest_nodes(node2.id)
+     *        \
+     *         From the bucket and bucket index 
+     *         we get node2 and calculate the distance
+     *         between node2.id and the original id
+     *         we are searching for, which is node2.id.
+     *         Thus the distance between both ids will be 0.
+    */
     pub fn get_closest_nodes(&self, key: &Key) -> Vec<NodeWithDistance> {
         let mut res = Vec::new();
-        let mut bucketindex = self.get_bucket_index(key);
+        let bucketindex = self.get_bucket_index(key);
 
         for node in &self.kbuckets[bucketindex].nodes {
             res.push(
@@ -131,17 +144,17 @@ impl RoutingTable {
             );
         }
 
-        if res.len() < K_PARAM {
-            while bucketindex < self.kbuckets.len() - 1 {
-                bucketindex += 1;
+        // if res.len() < K_PARAM {
+        //     while bucketindex < self.kbuckets.len() - 1 {
+        //         bucketindex += 1;
 
-                for node in &self.kbuckets[bucketindex].nodes {
-                    res.push(
-                        NodeWithDistance(node.clone(), Distance::new(&node.id, key))
-                    );
-                }
-            }
-        }
+        //         for node in &self.kbuckets[bucketindex].nodes {
+        //             res.push(
+        //                 NodeWithDistance(node.clone(), Distance::new(&node.id, key))
+        //             );
+        //         }
+        //     }
+        // }
 
         res.sort_by(|a, b| a.1.cmp(&b.1));
         res.truncate(K_PARAM);
@@ -168,7 +181,7 @@ impl KademliaInstance {
         };
 
         kad.clone().requests_handler(rpc_receiver);
-        kad.node_lookup(&node.id);
+        kad.find_node(&node.id);
 
         // republish every <key,value> every timeout
 
@@ -198,7 +211,7 @@ impl KademliaInstance {
         qynode -> query node
         id -> id to search
     */
-    pub fn find_node(&self, qynode: Node, id: Key) -> Option<Vec<NodeWithDistance>> {
+    pub fn query_node(&self, qynode: Node, id: Key) -> Option<Vec<NodeWithDistance>> {
         let res = full_rpc_proc(&self.rpc, KademliaRequest::FindNode(id), qynode.clone());
 
         let mut routingtable = self.routingtable.lock()
@@ -215,7 +228,7 @@ impl KademliaInstance {
     } 
 
     /*
-        Node lookup:
+        Find node:
             Uses multiple threads for lookup,
             each node in our routing table closest to 'id'
             is visited and used to query for the node using the
@@ -224,19 +237,18 @@ impl KademliaInstance {
             node that was queried is added to the result. Result 
             vector is sorted by distance before being returned.
     */
-    pub fn node_lookup(&self, id: &Key) -> Vec<NodeWithDistance> {
+    pub fn find_node(&self, id: &Key) -> Vec<NodeWithDistance> {
         let mut res: Vec<NodeWithDistance> = Vec::new();
 
-        let mut queried = HashSet::new();
         let routingtable = self.routingtable.lock()
             .expect("Error setting lock in routing table");
 
-
+        let mut history = HashSet::new();
         let mut nodes = BinaryHeap::from(routingtable.get_closest_nodes(id));
         drop(routingtable);
 
         for entry in &nodes {
-            queried.insert(entry.clone());
+            history.insert(entry.clone());
         }
 
         while !nodes.is_empty() {
@@ -257,7 +269,7 @@ impl KademliaInstance {
                 let node = node.clone();
                 let id = id.clone();
                 threads.push(spawn(move || {
-                    kad.find_node(node, id)
+                    kad.query_node(node, id)
                 }));
             }
 
@@ -267,12 +279,15 @@ impl KademliaInstance {
                 );
             }
 
-            for (result, query) in results.into_iter().zip(qynodes) {
+            for (result, qynode) in results.into_iter().zip(qynodes) {
                 if let Some(entries) = result {
-                    res.push(query);
+                    // add intermediate query node to result
+                    res.push(qynode);
 
+                    // if result node(s) (closest nodes to qynode)
+                    // haven't been searched add them to heap
                     for entry in entries {
-                        if queried.insert(entry.clone()) {
+                        if history.insert(entry.clone()) {
                             nodes.push(entry);
                         }
                     }
@@ -280,10 +295,7 @@ impl KademliaInstance {
             }
         }
 
-        res.sort_by(|a, b| a.1.cmp(&b.1));
         res.truncate(K_PARAM);
-
-        //println!("Node {}, node_lookup: {:?}", self.node.get_addr(), res);
 
         res
     }
@@ -336,6 +348,15 @@ impl KademliaInstance {
             },
             KademliaRequest::FindValue(_) => (KademliaResponse::Ping, request),
         }
-        // (KademliaResponse::Ping, request)
     }
+    
+    /**
+     * TESTING FUNCTIONS 
+    **/
+
+    pub fn print_routing_table(&self) {
+        let routingtable = self.routingtable.lock()
+            .expect("Error setting lock in routing table");
+        println!("{:?}", routingtable);
+    } 
 }

@@ -122,7 +122,7 @@ impl Rpc {
                 }
 
                 // RPC prints
-                // println!("Received message from {:?} to {:?}: {:?}", &content.src, &content.dst, &content.payload);
+                // println!("From {:?} to {:?}: {:?}", &content.src, &content.dst, &content.payload);
 
                 match content.payload {
                     RpcPayload::Request(kadrequest) => {
