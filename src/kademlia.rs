@@ -1,12 +1,18 @@
-use super::rpc::{Rpc, RpcRequestWithMeta, RpcMessage, RpcPayload, KademliaRequest, KademliaResponse, full_rpc_proc};
+use super::rpc::{
+    Rpc, RpcRequestWithMeta, RpcMessage, RpcPayload, 
+    KademliaRequest, KademliaResponse, 
+    QueryValueResult, 
+    full_rpc_proc
+};
 use super::node::{Node, Key, Distance, NodeWithDistance};
-use super::{K_PARAM, N_KBUCKETS, KEY_LEN, ALPHA};
+use super::{K_PARAM, N_KBUCKETS, KEY_LEN, ALPHA, TREPLICATE};
 
 use crossbeam_channel;
-use std::thread::{JoinHandle, spawn};
+use std::thread::{JoinHandle, spawn, sleep};
 use std::sync::{Arc, Mutex};
 use std::collections::{HashMap, BinaryHeap, HashSet};
 use std::str;
+use std::time::Duration;
 
 /**
  * KBucket Instance:
@@ -100,8 +106,27 @@ impl RoutingTable {
         0
     }
 
+    // Get closest nodes according to key
+    fn get_closest_nodes(&self, key: &Key) -> Vec<NodeWithDistance> {
+        let mut res = Vec::new();
+        let mut bucketindex = self.get_bucket_index(key);
+
+        while bucketindex < self.kbuckets.len() - 1 {
+            bucketindex += 1;
+
+            for node in &self.kbuckets[bucketindex].nodes {
+                res.push(
+                    NodeWithDistance(node.clone(), Distance::new(&node.id, key))
+                );
+            }
+        }
+
+        
+        res
+    }
+
     // Routing table update function: Updates routing table with new node
-    pub fn update_routing_table(&mut self, node: Node) {
+    fn update_routing_table(&mut self, node: Node) {
         let bucketindex = self.get_bucket_index(&node.id);
 
         if self.kbuckets[bucketindex].nodes.len() < K_PARAM {
@@ -126,7 +151,7 @@ impl RoutingTable {
      *  and node2, Example:
      *   kad1.query_node(node1, node2.id)
      *      \
-     *       rt1.get_closest_nodes(node2.id)
+     *       rt1.get_bucket_nodes(node2.id)
      *        \
      *         From the bucket and bucket index 
      *         we get node2 and calculate the distance
@@ -134,7 +159,7 @@ impl RoutingTable {
      *         we are searching for, which is node2.id.
      *         Thus the distance between both ids will be 0.
     */
-    pub fn get_closest_nodes(&self, key: &Key) -> Vec<NodeWithDistance> {
+    fn get_bucket_nodes(&self, key: &Key) -> Vec<NodeWithDistance> {
         let mut res = Vec::new();
         let bucketindex = self.get_bucket_index(key);
 
@@ -143,18 +168,6 @@ impl RoutingTable {
                 NodeWithDistance(node.clone(), Distance::new(&node.id, key))
             );
         }
-
-        // if res.len() < K_PARAM {
-        //     while bucketindex < self.kbuckets.len() - 1 {
-        //         bucketindex += 1;
-
-        //         for node in &self.kbuckets[bucketindex].nodes {
-        //             res.push(
-        //                 NodeWithDistance(node.clone(), Distance::new(&node.id, key))
-        //             );
-        //         }
-        //     }
-        // }
 
         res.sort_by(|a, b| a.1.cmp(&b.1));
         res.truncate(K_PARAM);
@@ -181,61 +194,96 @@ impl KademliaInstance {
         };
 
         kad.clone().requests_handler(rpc_receiver);
+        
+        // TODO: verify if needed
         kad.find_node(&node.id);
 
         // republish every <key,value> every timeout
+        let kadclone = kad.clone();
+        spawn(move || {
+            sleep(Duration::from_secs(TREPLICATE));
+            kadclone.republish();
+        });
 
         kad
     }
 
-    pub fn ping(&self, node: Node) -> bool {
-        let res = full_rpc_proc(&self.rpc, KademliaRequest::Ping, node.clone());
-
-        let mut routingtable = self.routingtable.lock()
-            .expect("Error setting lock in routing table");
-
-        if let Some(KademliaResponse::Ping) = res {
-            routingtable.update_routing_table(node);
-
-            true
-        } else {
-            eprintln!("NO RESPONSE TO PING");
-            // remove contact from routing table
-
-            false
+    pub fn republish(&self) {
+        let hashmap = self.hashmap.lock()
+        .expect("Error setting lock in hashmap");
+        for (key, value) in &*hashmap {
+            self.insert(key.to_string(), value.to_string());
         }
     }
 
-    /*
-        TODO: docs
-        qynode -> query node
-        id -> id to search
-    */
-    pub fn query_node(&self, qynode: Node, id: Key) -> Option<Vec<NodeWithDistance>> {
-        let res = full_rpc_proc(&self.rpc, KademliaRequest::FindNode(id), qynode.clone());
+    /**
+     * HASHMAP FUNCTIONS 
+    **/
 
-        let mut routingtable = self.routingtable.lock()
-            .expect("Error setting lock in routing table");
+    /**
+     * Both functions have a nuance
+     * where if no node or value is
+     * found, then local hashmap is
+     * used to perform the action.
+    **/
 
-        if let Some(KademliaResponse::FindNode(nodeswithdist)) = res {
-            routingtable.update_routing_table(qynode);
-            Some(nodeswithdist)
+    /**
+     * Function based on KAD paper
+     * ACTUAL FUNCTION USED TO INSERT VALUE
+     * NOT TO BE CONFUSED WITH STORE 
+    **/
+    pub fn insert(&self, keystr: String, value: String) {
+        let nodes = self.find_node(&Key::new(keystr.clone()));
+
+        if nodes.is_empty() {            
+            let mut hashmap = self.hashmap.lock()
+                .expect("");
+            hashmap.insert(keystr, value);
         } else {
-            // Remove node from routing table
-            None
+            for NodeWithDistance(node, _) in nodes {
+                let kad = self.clone();
+                let keystr = keystr.clone();
+                let value = value.clone();
+                kad.store_value(node, keystr, value);
+            }
         }
+    }
 
-    } 
+    pub fn get(&self, key: String) -> Option<String> {
+        let (value, mut nodes) = self.find_value(key.clone());
+
+        if value == None {
+            let hashmap = self.hashmap.lock()
+                    .expect("Error setting lock in hashmap");
+            let value = hashmap.get(&key).unwrap();
+            Some(value.to_string())
+        } else {
+            value.map(|val| {
+                if let Some(NodeWithDistance(node, _)) = nodes.pop() {
+                    self.store_value(node, key, val.clone());
+                }
+
+                val
+            })
+        }
+    }
+
+    /**
+     *  FIND NODE/VALUE FUNCTIONS
+    **/
 
     /*
         Find node:
             Uses multiple threads for lookup,
             each node in our routing table closest to 'id'
             is visited and used to query for the node using the
-            specified id. From there each thread holds the history
-            of the search in a vector of NodeWithDistance. So each 
-            node that was queried is added to the result. Result 
-            vector is sorted by distance before being returned.
+            specified id.
+
+            If no nodes are present in the bucket, then either
+            the node isn't present in the routing table or no 
+            other node is stored in that bucket (ex: find_node_test).
+            If this occurs then, the closest nodes to the id 
+            are queried.
     */
     pub fn find_node(&self, id: &Key) -> Vec<NodeWithDistance> {
         let mut res: Vec<NodeWithDistance> = Vec::new();
@@ -244,7 +292,11 @@ impl KademliaInstance {
             .expect("Error setting lock in routing table");
 
         let mut history = HashSet::new();
-        let mut nodes = BinaryHeap::from(routingtable.get_closest_nodes(id));
+        let mut nodes = BinaryHeap::from(routingtable.get_bucket_nodes(id));
+        
+        if nodes.is_empty() {
+            nodes = BinaryHeap::from(routingtable.get_closest_nodes(id));
+        }
         drop(routingtable);
 
         for entry in &nodes {
@@ -264,6 +316,7 @@ impl KademliaInstance {
                 }
             }
 
+            // ref --> reference
             for NodeWithDistance(ref node, _) in &qynodes {
                 let kad = self.clone();
                 let node = node.clone();
@@ -294,11 +347,154 @@ impl KademliaInstance {
                 }
             }
         }
-
         res.truncate(K_PARAM);
 
         res
     }
+
+    // Same as function above but for given key (string)
+    pub fn find_value(&self, keystr: String) -> (Option<String>, Vec<NodeWithDistance>) {
+        let mut res: Vec<NodeWithDistance> = Vec::new();
+        let key: Key = Key::new(keystr.clone());
+        let routingtable = self.routingtable.lock()
+            .expect("Error setting lock in routing table");
+        let mut history = HashSet::new();
+        let mut nodes = BinaryHeap::from(routingtable.get_bucket_nodes(&key));
+        drop(routingtable);
+
+        for entry in &nodes {
+            history.insert(entry.clone());
+        }
+
+        while !nodes.is_empty() {
+            let mut threads: Vec<JoinHandle<Option<QueryValueResult>>> = Vec::new();
+            let mut qynodes: Vec<NodeWithDistance> = Vec::new();
+            let mut results: Vec<Option<QueryValueResult>> = Vec::new();
+
+            // TODO
+            // ALPHA parallelism
+            for _ in 0..ALPHA {
+                match nodes.pop() {
+                    Some(node) => { qynodes.push(node); },
+                    None => { break; },
+                }
+            }
+
+            // ref --> reference
+            for NodeWithDistance(ref node, _) in &qynodes {
+                let kad = self.clone();
+                let node = node.clone();
+                let keystr = keystr.clone();
+                threads.push(spawn(move || {
+                    kad.query_value(node, keystr)
+                }));
+            }
+            
+            for thread in threads {
+                results.push(thread.join()
+                    .expect("Error joining threads with results")
+                );
+            }
+
+            for (result, qynode) in results.into_iter().zip(qynodes) {
+                if let Some(value) = result {
+                    match value {
+                        QueryValueResult::Nodes(entries) => {
+                            // add intermediate query node to result
+                            // since search didn't find the value
+                            res.push(qynode);
+
+                            for entry in entries {
+                                if history.insert(entry.clone()) {
+                                    nodes.push(entry);
+                                }
+                            }
+                        },
+                        QueryValueResult::Value(value) => {
+                            res.sort_by(|a,b| a.1.cmp(&b.1));
+                            res.truncate(K_PARAM);
+
+                            return (Some(value), res)
+                        }
+                    }
+                }
+            }
+        }
+
+        res.truncate(K_PARAM);
+        (None, res)
+    }
+
+    /**
+     * RPC CALLS
+    **/
+
+    // Send ping to node
+    pub fn ping(&self, node: Node) -> bool {
+        let res = full_rpc_proc(&self.rpc, KademliaRequest::Ping, node.clone());
+
+        let mut routingtable = self.routingtable.lock()
+            .expect("Error setting lock in routing table");
+
+        if let Some(KademliaResponse::Ping) = res {
+            routingtable.update_routing_table(node);
+
+            true
+        } else {
+            eprintln!("NO RESPONSE TO PING");
+            // remove contact from routing table
+
+            false
+        }
+    }
+
+    // Query node for given id (routing table)
+    pub fn query_node(&self, qynode: Node, id: Key) -> Option<Vec<NodeWithDistance>> {
+        let res = full_rpc_proc(&self.rpc, KademliaRequest::QueryNode(id), qynode.clone());
+
+        let mut routingtable = self.routingtable.lock()
+            .expect("Error setting lock in routing table");
+
+        if let Some(KademliaResponse::QueryNode(nodeswithdist)) = res {
+            routingtable.update_routing_table(qynode);
+            Some(nodeswithdist)
+        } else {
+            // Remove node from routing table
+            None
+        }
+
+    } 
+
+    // Query node for given key (hashmap)
+    pub fn query_value(&self, qynode: Node, key: String) -> Option<QueryValueResult> {
+        let res = full_rpc_proc(&self.rpc, KademliaRequest::QueryValue(key), qynode.clone());
+        
+        if let Some(KademliaResponse::QueryValue(value)) = res {
+            let mut routingtable = self.routingtable.lock()
+                .expect("Error setting lock in routing table");
+            routingtable.update_routing_table(qynode);
+            Some(value)
+        } else {
+            None
+        }
+    }
+
+    // Store <key,value> in node
+    pub fn store_value(&self, qynode: Node, key: String, value: String) {
+        let res = full_rpc_proc(&self.rpc, KademliaRequest::Store(key.clone(), value.clone()), qynode.clone());
+
+        if let Some(KademliaResponse::Ping) = res {
+            let mut routingtable = self.routingtable.lock()
+                .expect("Error setting lock in routingtable");
+            routingtable.update_routing_table(qynode);
+        } else {
+            // TODO: error logs
+        }
+    }
+
+    /** 
+     * Requests handler & Response constructor
+    */
 
     fn requests_handler(self, receiver: crossbeam_channel::Receiver<RpcRequestWithMeta>) {
         std::thread::spawn(move || {
@@ -337,16 +533,38 @@ impl KademliaInstance {
 
         match request.payload {
             KademliaRequest::Ping => (KademliaResponse::Ping, request),
-            KademliaRequest::Store(_, _) => (KademliaResponse::Ping, request),
-            KademliaRequest::FindNode(ref id) => {
+            KademliaRequest::Store(ref key, ref value) => {
+                let mut hashmap = self.hashmap.lock()
+                    .expect("");
+                hashmap.insert(key.to_string(), value.to_string());
+                (KademliaResponse::Ping, request)
+            },
+            KademliaRequest::QueryNode(ref id) => {
                 let routingtable = self.routingtable.lock()
                     .expect("Error setting lock in routing table");
 
-                let result = routingtable.get_closest_nodes(id);
+                let result = routingtable.get_bucket_nodes(id);
 
-                (KademliaResponse::FindNode(result), request)
+                (KademliaResponse::QueryNode(result), request)
             },
-            KademliaRequest::FindValue(_) => (KademliaResponse::Ping, request),
+            KademliaRequest::QueryValue(ref keystr) => {
+                let key = Key::new(keystr.to_string());
+                let hashmap = self.hashmap.lock()
+                    .expect("Error setting lock in hashmap");
+                let value = hashmap.get(keystr);
+
+                match value {
+                    Some(val) => (
+                        (KademliaResponse::QueryValue(QueryValueResult::Value(val.to_string())), request)
+                    ),
+                    None => {
+                        let routingtable = self.routingtable.lock()
+                            .expect("Error setting lock in routing table");
+                        
+                        (KademliaResponse::QueryValue(QueryValueResult::Nodes(routingtable.get_bucket_nodes(&key))), request)
+                    }
+                }
+            },
         }
     }
     
@@ -354,9 +572,26 @@ impl KademliaInstance {
      * TESTING FUNCTIONS 
     **/
 
+    pub fn same_bucket(&self, id1: &Key, id2: &Key) -> bool {
+        let routingtable = self.routingtable.lock()
+            .expect("Error setting lock in routing table");
+        
+        if routingtable.get_bucket_index(id1) == routingtable.get_bucket_index(id2) {
+            return true
+        }
+
+        false
+    }
+
     pub fn print_routing_table(&self) {
         let routingtable = self.routingtable.lock()
             .expect("Error setting lock in routing table");
         println!("{:?}", routingtable);
-    } 
+    }
+
+    pub fn print_hashmap(&self) {
+        let hashmap = self.hashmap.lock()
+            .expect("Error setting lock in hasmap");
+        println!("{:?}", hashmap);
+    }
 }

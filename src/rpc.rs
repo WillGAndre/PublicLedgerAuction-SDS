@@ -22,19 +22,19 @@ use super::TREPLICATE;
 pub enum KademliaRequest {
     Ping,
     Store(String, String),
-    FindNode(Key),
-    FindValue(String),
+    QueryNode(Key),
+    QueryValue(String),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum KademliaResponse {
     Ping,
-    FindNode(Vec<NodeWithDistance>),
-    FindValue(FindValueResult),
+    QueryNode(Vec<NodeWithDistance>),
+    QueryValue(QueryValueResult),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub enum FindValueResult {
+pub enum QueryValueResult {
     Nodes(Vec<NodeWithDistance>),
     Value(String),
 }
@@ -122,7 +122,7 @@ impl Rpc {
                 }
 
                 // RPC prints
-                // println!("From {:?} to {:?}: {:?}", &content.src, &content.dst, &content.payload);
+                println!("From {:?} to {:?}: {:?}", &content.src, &content.dst, &content.payload);
 
                 match content.payload {
                     RpcPayload::Request(kadrequest) => {

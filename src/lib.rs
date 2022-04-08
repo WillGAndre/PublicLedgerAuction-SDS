@@ -24,7 +24,7 @@ const TREPLICATE: u64 = 3600;
 
 #[cfg(test)]
 mod tests {
-    use super::node::{Node, NodeWithDistance, Distance};
+    use super::node::{Node, NodeWithDistance, Distance, Key};
     use super::rpc::{Rpc, KademliaRequest};
     use super::kademlia::{KademliaInstance, RoutingTable, Bucket};
     use super::aux;
@@ -100,8 +100,7 @@ mod tests {
 
         println!("Leading Zeros: {}, Bucket Index: {}", leading_zeros, bucket_index);
 
-        assert_eq!(leading_zeros, 0);
-        assert_eq!(bucket_index, 159);
+        assert_eq!(bucket_index, 159 - leading_zeros);
     }
 
     #[test]
@@ -132,9 +131,9 @@ mod tests {
 
     #[test]
     fn find_node_test() {
-        let node1 = Node::new(aux::get_ip().unwrap(), 1343);
-        let node2 = Node::new(aux::get_ip().unwrap(), 1344);
-        let node3 = Node::new(aux::get_ip().unwrap(), 1345);
+        let node1 = Node::new(aux::get_ip().unwrap(), 1344);
+        let node2 = Node::new(aux::get_ip().unwrap(), 1345);
+        let node3 = Node::new(aux::get_ip().unwrap(), 1346);
 
         let kad1 = KademliaInstance::new(node1.addr.clone(), node1.port.clone(), Some(node2.clone()));        
         let kad2 = KademliaInstance::new(node2.addr.clone(), node2.port.clone(), Some(node1.clone()));
@@ -150,15 +149,66 @@ mod tests {
         // Add node3 to node2's routing table
         kad2.ping(node3.clone());
 
-        //kad1.print_routing_table();
-        //println!("\n");
+        // kad1.print_routing_table();
+        // println!("\n");
+        // kad2.print_routing_table();
 
-        // Find node3 (from node1)
+        println!("Is node2 and node3 stored in the same bucket: {}", kad1.same_bucket(&node2.id.clone(), &node3.id.clone()));
         let find_node3 = kad1.find_node(&node3.id.clone());
-        assert_eq!(find_node3.len(), 2);
-        assert_eq!(find_node3[0].0.id, node2.id);
-        assert_eq!(find_node3[1].0.id, node3.id);
+        // let d12 = Distance::new(&node1.id.clone(), &node2.id.clone());
+        let d13 = Distance::new(&node1.id.clone(), &node3.id.clone());
+        let d23 = Distance::new(&node2.id.clone(), &node3.id.clone());
+        let d33 = Distance::new(&node3.id.clone(), &node3.id.clone());
 
-        //kad1.print_routing_table();
+        let node1_index = find_node3.iter().position(|n| n.0.id == node1.id);
+        let node2_index = find_node3.iter().position(|n| n.0.id == node2.id);
+        let node3_index = find_node3.iter().position(|n| n.0.id == node3.id);
+        
+        match node1_index {
+            Some(i) => {
+                let nwd = find_node3[i].clone();
+                assert_eq!(nwd.1, d13);
+            },
+            None => assert_ne!(node1_index, None)
+        }
+        match node2_index {
+            Some(i) => {
+                let nwd = find_node3[i].clone();
+                assert_eq!(nwd.1, d23);
+            },
+            None => assert_ne!(node2_index, None)
+        }
+        match node3_index {
+            Some(i) => {
+                let nwd = find_node3[i].clone();
+                assert_eq!(nwd.1, d33);
+            },
+            None => assert_ne!(node2_index, None)
+        }
+    }
+
+    #[test]
+    fn insert_get_test() {
+        let node1 = Node::new(aux::get_ip().unwrap(), 1347);
+        let node2 = Node::new(aux::get_ip().unwrap(), 1348);
+        let node3 = Node::new(aux::get_ip().unwrap(), 1349);
+
+        let kad1 = KademliaInstance::new(node1.addr.clone(), node1.port.clone(), None);        
+        let _kad2 = KademliaInstance::new(node2.addr.clone(), node2.port.clone(), Some(node1.clone()));
+        let _kad3 = KademliaInstance::new(node3.addr.clone(), node3.port.clone(), Some(node1.clone()));
+
+        kad1.ping(node2.clone());
+        kad1.ping(node3.clone());
+        _kad2.ping(node3.clone());
+
+        kad1.insert("test_key".to_owned(), "test_value".to_owned());
+        assert_eq!(kad1.get("test_key".to_owned()).unwrap(), "test_value".to_string());
+
+        // println!("KAD1:");
+        // kad1.print_hashmap();
+        // println!("KAD2:");
+        // _kad2.print_hashmap();
+        // println!("KAD3:");
+        // _kad3.print_hashmap();
     }
 }
