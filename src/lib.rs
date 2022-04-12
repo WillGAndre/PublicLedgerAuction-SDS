@@ -29,6 +29,7 @@ mod tests {
     use super::node::{Node, NodeWithDistance, Distance, Key};
     use super::rpc::{Rpc, KademliaRequest};
     use super::kademlia::{KademliaInstance, RoutingTable, Bucket};
+    use super::bootstrap::Bootstrap;
     use super::aux;
     use super::{N_KBUCKETS, KEY_LEN};
     use log::{info};
@@ -235,5 +236,10 @@ mod tests {
         let res12 = kad1.query_blockchain(node2.clone());
         println!("res12: {:?}", res21);
         println!("res12: {:?}", res12);
+    }
+
+    #[test]
+    fn bootstrap_test() {
+        let boot = Bootstrap::new();
     }
 }

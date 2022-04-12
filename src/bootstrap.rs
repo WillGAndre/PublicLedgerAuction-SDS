@@ -1,5 +1,31 @@
 use super::kademlia::KademliaInstance;
 use super::node::{Node};
+use super::aux::get_ip;
+
+pub struct Bootstrap {
+    pub mstrnodes: Vec<MasterNode>,
+    pub authnodes: Vec<AuthorityNode>,
+    pub routnodes: Vec<RoutingNode>,
+}
+
+impl Bootstrap {
+    pub fn new() -> Self {
+        let mut mst = Vec::new();
+        mst.push(MasterNode::new(get_ip().unwrap(), 1330, None));
+        let mut aut = Vec::new();
+        aut.push(AuthorityNode::new(get_ip().unwrap(), 1331, None));
+        aut.push(AuthorityNode::new(get_ip().unwrap(), 1332, None));
+        aut.push(AuthorityNode::new(get_ip().unwrap(), 1333, None));
+        let mut rt = Vec::new();
+        rt.push(RoutingNode::new(get_ip().unwrap(), 1334, None));
+        rt.push(RoutingNode::new(get_ip().unwrap(), 1335, None));
+        Self {
+            mstrnodes: mst,
+            authnodes: aut,
+            routnodes: rt,
+        }
+    }
+}
 
 /*
     TODO:
@@ -34,9 +60,27 @@ pub struct MasterNode {
     pub kademlia: KademliaInstance
 }
 
+impl MasterNode { // T
+    pub fn new(addr: String, port: u16, bootstrap: Option<Node>) -> Self {
+        Self {
+            node: Node::new(addr.clone(), port.clone()),
+            kademlia: KademliaInstance::new(addr, port, bootstrap)
+        }
+    }
+}
+
 pub struct AuthorityNode { // G
     pub node: Node,
     pub kademlia: KademliaInstance
+}
+
+impl AuthorityNode {
+    pub fn new(addr: String, port: u16, bootstrap: Option<Node>) -> Self {
+        Self {
+            node: Node::new(addr.clone(), port.clone()),
+            kademlia: KademliaInstance::new(addr, port, bootstrap)
+        }
+    }
 }
 
 pub struct RoutingNode { // G
@@ -44,9 +88,29 @@ pub struct RoutingNode { // G
     pub kademlia: KademliaInstance
 }
 
-pub struct LightNode {
+impl RoutingNode {
+    pub fn new(addr: String, port: u16, bootstrap: Option<Node>) -> Self {
+        Self {
+            node: Node::new(addr.clone(), port.clone()),
+            kademlia: KademliaInstance::new(addr, port, bootstrap)
+        }
+
+
+    }
+}
+
+pub struct LightNode { // T
     pub node: Node,
     pub kademlia: KademliaInstance
+}
+
+impl LightNode {
+    pub fn new(addr: String, port: u16, bootstrap: Option<Node>) -> Self {
+        Self {
+            node: Node::new(addr.clone(), port.clone()),
+            kademlia: KademliaInstance::new(addr, port, bootstrap)
+        }
+    }
 }
 
 //  ***
