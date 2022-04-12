@@ -3,6 +3,7 @@ pub mod aux;
 pub mod rpc;
 pub mod kademlia;
 pub mod blockchain;
+pub mod bootstrap;
 
 /**
  * BASED ON: KademliaBriefOverview.pdf 
@@ -236,10 +237,3 @@ mod tests {
         println!("res12: {:?}", res12);
     }
 }
-
-// TODO: NODE TYPE
-// https://nodes.com/
-// https://www.sofi.com/learn/content/what-are-nodes/
-    // Auth
-    // Master
-    // Routing
