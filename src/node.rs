@@ -40,12 +40,12 @@ pub struct MasterNode {
     pub kademlia: KademliaInstance
 }
 
-pub struct AuthorityNode {
+pub struct AuthorityNode { // G
     pub node: Node,
     pub kademlia: KademliaInstance
 }
 
-pub struct RoutingNode {
+pub struct RoutingNode { // G
     pub node: Node,
     pub kademlia: KademliaInstance
 }
