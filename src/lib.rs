@@ -29,6 +29,7 @@ mod tests {
     use super::node::{Node, NodeWithDistance, Distance, Key};
     use super::rpc::{Rpc, KademliaRequest};
     use super::kademlia::{KademliaInstance, RoutingTable, Bucket};
+    use super::blockchain::{Block};
     use super::bootstrap::Bootstrap;
     use super::aux;
     use super::{N_KBUCKETS, KEY_LEN};
@@ -241,5 +242,12 @@ mod tests {
     #[test]
     fn bootstrap_test() {
         let boot = Bootstrap::new();
+        //boot.mstrnodes[0].kademlia.print_routing_table();
+
+        boot.authnodes[0].add_block(Block::new(1, "0000f816a87f806bb0073dcf026a64fb40c946b5abee2573702828694d5b4c43".to_string(), "test".to_string()));
+        boot.broadcast_blockchain();
+
+        //boot.authnodes[0].kademlia.print_blockchain();
+        boot.authnodes[1].kademlia.print_blockchain()
     }
 }

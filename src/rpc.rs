@@ -27,7 +27,7 @@ pub enum KademliaRequest {
     QueryValue(String),
 
     QueryLocalBlockChain,
-    AddBlock(Block)
+    AddBlock(Block),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -128,7 +128,7 @@ impl Rpc {
                 }
 
                 // RPC prints
-                println!("From {:?} to {:?}: {:?}", &content.src, &content.dst, &content.payload);
+                // println!("From {:?} to {:?}: {:?}", &content.src, &content.dst, &content.payload);
 
                 match content.payload {
                     RpcPayload::Request(kadrequest) => {
