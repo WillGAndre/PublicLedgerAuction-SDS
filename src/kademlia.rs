@@ -6,6 +6,7 @@ use super::rpc::{
 };
 use super::node::{Node, Key, Distance, NodeWithDistance};
 use super::{K_PARAM, N_KBUCKETS, KEY_LEN, ALPHA, TREPLICATE};
+use super::blockchain::{Blockchain, Block};
 
 use crossbeam_channel;
 use std::thread::{JoinHandle, spawn, sleep};
@@ -42,6 +43,7 @@ pub struct KademliaInstance {
     pub routingtable: Arc<Mutex<RoutingTable>>,
     pub hashmap: Arc<Mutex<HashMap<String, String>>>,
     pub node: Node,
+    pub blockchain: Arc<Mutex<Blockchain>>,
 }
 
 impl Bucket {
@@ -180,6 +182,8 @@ impl KademliaInstance {
     pub fn new(ip: String, port: u16, bootstrap: Option<Node>) -> Self {
         let node = Node::new(ip, port);
         let routingtable = RoutingTable::new(node.clone(), bootstrap);
+        let mut blockchain = Blockchain::new();
+        blockchain.genesis();
 
         // RPC channels
         let (rpc_sender, rpc_receiver) = crossbeam_channel::unbounded();
@@ -191,6 +195,7 @@ impl KademliaInstance {
             routingtable: Arc::new(Mutex::new(routingtable)),
             hashmap: Arc::new(Mutex::new(HashMap::new())),
             node: node.clone(),
+            blockchain: Arc::new(Mutex::new(blockchain))
         };
 
         kad.clone().requests_handler(rpc_receiver);
@@ -492,6 +497,17 @@ impl KademliaInstance {
         }
     }
 
+    // Query node for local blockchain
+    pub fn query_blockchain(&self, qynode: Node) -> Option<Vec<Block>> {
+        let res = full_rpc_proc(&self.rpc, KademliaRequest::QueryLocalBlockChain, qynode.clone());
+
+        if let Some(KademliaResponse::QueryLocalBlockChain(blockchain)) = res {
+            Some(blockchain)
+        } else {
+            None
+        }
+    }
+
     /** 
      * Requests handler & Response constructor
     */
@@ -565,6 +581,18 @@ impl KademliaInstance {
                     }
                 }
             },
+
+            KademliaRequest::AddBlock(ref block) => {
+                let mut blockchain = self.blockchain.lock()
+                    .expect("Error setting lock in local blockchain");
+                blockchain.add_block(block.clone());
+                (KademliaResponse::Ping, request)
+            },
+            KademliaRequest::QueryLocalBlockChain => {
+                let blockchain = self.blockchain.lock()
+                    .expect("Error setting lock in local blockchain");
+                (KademliaResponse::QueryLocalBlockChain(blockchain.blocks.clone()), request)
+            }
         }
     }
     
@@ -593,5 +621,11 @@ impl KademliaInstance {
         let hashmap = self.hashmap.lock()
             .expect("Error setting lock in hasmap");
         println!("{:?}", hashmap);
+    }
+
+    pub fn print_blockchain(&self) {
+        let blockchain = self.blockchain.lock()
+            .expect("Error setting lock in local blockchain");
+        println!("{:?}", blockchain)
     }
 }

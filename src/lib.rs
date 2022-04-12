@@ -2,6 +2,7 @@ pub mod node;
 pub mod aux;
 pub mod rpc;
 pub mod kademlia;
+pub mod blockchain;
 
 /**
  * BASED ON: KademliaBriefOverview.pdf 
@@ -153,7 +154,8 @@ mod tests {
         // println!("\n");
         // kad2.print_routing_table();
 
-        println!("Is node2 and node3 stored in the same bucket: {}", kad1.same_bucket(&node2.id.clone(), &node3.id.clone()));
+        let same_bucket = kad1.same_bucket(&node2.id.clone(), &node3.id.clone());
+        println!("Is node2 and node3 stored in the same bucket: {}", same_bucket);
         let find_node3 = kad1.find_node(&node3.id.clone());
         // let d12 = Distance::new(&node1.id.clone(), &node2.id.clone());
         let d13 = Distance::new(&node1.id.clone(), &node3.id.clone());
@@ -163,13 +165,21 @@ mod tests {
         let node1_index = find_node3.iter().position(|n| n.0.id == node1.id);
         let node2_index = find_node3.iter().position(|n| n.0.id == node2.id);
         let node3_index = find_node3.iter().position(|n| n.0.id == node3.id);
+
+        // println!("find_node3: {:?}", find_node3);
         
         match node1_index {
             Some(i) => {
                 let nwd = find_node3[i].clone();
                 assert_eq!(nwd.1, d13);
             },
-            None => assert_ne!(node1_index, None)
+            None => {
+                if same_bucket {
+                    assert_eq!(node1_index, None)
+                } else {
+                    assert_ne!(node1_index, None)
+                }
+            }
         }
         match node2_index {
             Some(i) => {
@@ -211,4 +221,25 @@ mod tests {
         // println!("KAD3:");
         // _kad3.print_hashmap();
     }
+
+    #[test]
+    fn blockchain_test() {
+        let node1 = Node::new(aux::get_ip().unwrap(), 1350);
+        let node2 = Node::new(aux::get_ip().unwrap(), 1351);
+
+        let kad1 = KademliaInstance::new(node1.addr.clone(), node1.port.clone(), Some(node2.clone()));
+        let kad2 = KademliaInstance::new(node2.addr.clone(), node2.port.clone(), Some(node1.clone()));
+
+        let res21 = kad2.query_blockchain(node1.clone());
+        let res12 = kad1.query_blockchain(node2.clone());
+        println!("res12: {:?}", res21);
+        println!("res12: {:?}", res12);
+    }
 }
+
+// TODO: NODE TYPE
+// https://nodes.com/
+// https://www.sofi.com/learn/content/what-are-nodes/
+    // Auth
+    // Master
+    // Routing

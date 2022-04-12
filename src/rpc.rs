@@ -9,6 +9,7 @@ use std::thread;
 use std::time::{SystemTime, Duration};
 
 use super::node::{Key, NodeWithDistance, Node};
+use super::blockchain::{Block};
 use super::TREPLICATE;
 
 // ENUM -> define types
@@ -24,6 +25,9 @@ pub enum KademliaRequest {
     Store(String, String),
     QueryNode(Key),
     QueryValue(String),
+
+    QueryLocalBlockChain,
+    AddBlock(Block)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -31,6 +35,8 @@ pub enum KademliaResponse {
     Ping,
     QueryNode(Vec<NodeWithDistance>),
     QueryValue(QueryValueResult),
+
+    QueryLocalBlockChain(Vec<Block>),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
