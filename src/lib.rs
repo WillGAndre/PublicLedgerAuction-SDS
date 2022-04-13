@@ -34,6 +34,8 @@ mod tests {
     use super::aux;
     use super::{N_KBUCKETS, KEY_LEN};
     use log::{info};
+    use std::time::Duration;
+    use std::thread::{sleep};
 
     #[test]
     fn node_with_dist_test() {
@@ -242,12 +244,17 @@ mod tests {
     #[test]
     fn bootstrap_test() {
         let boot = Bootstrap::new();
+        Bootstrap::init(boot.clone());
         //boot.mstrnodes[0].kademlia.print_routing_table();
 
         boot.authnodes[0].add_block(Block::new(1, "0000f816a87f806bb0073dcf026a64fb40c946b5abee2573702828694d5b4c43".to_string(), "test".to_string()));
-        boot.broadcast_blockchain();
 
+        // Not syncronized
         //boot.authnodes[0].kademlia.print_blockchain();
-        boot.authnodes[1].kademlia.print_blockchain()
+        boot.authnodes[1].kademlia.print_blockchain();
+
+        println!("wait: 20s");
+        sleep(Duration::from_secs(20));
+        boot.authnodes[1].kademlia.print_blockchain();
     }
 }

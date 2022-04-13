@@ -14,6 +14,14 @@ pub struct Bootstrap {
     pub routnodes: Vec<RoutingNode>,
 }
 
+/**
+ * TODO:
+ *  - Add init function as in rpc.rs
+ *      where:
+ *              blockchain is broadcasted (within AuthNodes)
+ *              routing table  || (|| RoutNodes)
+ *              masterNode action
+**/
 impl Bootstrap {
     pub fn new() -> Self {
         let mut mst = Vec::new();
@@ -35,13 +43,22 @@ impl Bootstrap {
             eprintln!("Error syncing bootstrap routing table")
         }
 
-        let bootclone = boot.clone();
-        spawn(move || {
-            // TODO: ADD TIMEOUT
-            bootclone.broadcast_blockchain();
-        });
-
         boot
+    }
+
+    /**
+     * init
+     *  current timeout at 20s
+     * 
+     * note: remember to add timeout in tests
+    **/
+    pub fn init(boot: Bootstrap) {
+        spawn(move || {
+            loop {
+                sleep(Duration::from_secs(20));
+                boot.broadcast_blockchain();
+            }
+        });
     }
 
     fn sync_routing(&self) -> bool {
@@ -63,23 +80,20 @@ impl Bootstrap {
         res
     }
 
-    pub fn broadcast_blockchain(&self)  { // TODO
-        //loop {
-            //sleep(Duration::from_secs(20));
-            let size = self.authnodes.len();
-            for i in 0..size {
-                let mut j = i+1;
-                while j < size {
-                    let n1 = &self.authnodes[i];
-                    let n2 = &self.authnodes[j];
-                    let n1remote = n1.kademlia.query_blockchain(n2.node.clone()).unwrap();
-                    let n2remote = n2.kademlia.query_blockchain(n1.node.clone()).unwrap();
-                    n1.verify_chain(n1remote);
-                    n2.verify_chain(n2remote);
-                    j += 1;
-                }
+    pub fn broadcast_blockchain(&self)  {
+        let size = self.authnodes.len();
+        for i in 0..size {
+            let mut j = i+1;
+            while j < size {
+                let n1 = &self.authnodes[i];
+                let n2 = &self.authnodes[j];
+                let n1remote = n1.kademlia.query_blockchain(n2.node.clone()).unwrap();
+                let n2remote = n2.kademlia.query_blockchain(n1.node.clone()).unwrap();
+                n1.verify_chain(n1remote);
+                n2.verify_chain(n2remote);
+                j += 1;
             }
-        //}
+        }
     }
 }
 
