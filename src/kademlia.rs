@@ -128,7 +128,7 @@ impl RoutingTable {
     }
 
     // Routing table update function: Updates routing table with new node
-    fn update_routing_table(&mut self, node: Node) {
+    pub fn update_routing_table(&mut self, node: Node) {
         let bucketindex = self.get_bucket_index(&node.id);
 
         if self.kbuckets[bucketindex].nodes.len() < K_PARAM {
@@ -161,7 +161,7 @@ impl RoutingTable {
      *         we are searching for, which is node2.id.
      *         Thus the distance between both ids will be 0.
     */
-    fn get_bucket_nodes(&self, key: &Key) -> Vec<NodeWithDistance> {
+    pub fn get_bucket_nodes(&self, key: &Key) -> Vec<NodeWithDistance> {
         let mut res = Vec::new();
         let bucketindex = self.get_bucket_index(key);
 
@@ -592,7 +592,16 @@ impl KademliaInstance {
                 let blockchain = self.blockchain.lock()
                     .expect("Error setting lock in local blockchain");
                 (KademliaResponse::QueryLocalBlockChain(blockchain.blocks.clone()), request)
-            }
+            },
+
+            KademliaRequest::NodeJoin(ref node) => {
+                let nodes: Vec<Node> = self.find_node(&node.id).iter().map(|nwd| nwd.0.clone()).collect();
+                let mut routingtable = self.routingtable.lock()
+                    .expect("Error setting lock in routing table");
+                routingtable.update_routing_table(node.clone());
+                
+                (KademliaResponse::NodeJoin(nodes), request)
+            },
         }
     }
     

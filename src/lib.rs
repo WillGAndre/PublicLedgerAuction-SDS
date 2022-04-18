@@ -30,7 +30,7 @@ mod tests {
     use super::rpc::{Rpc, KademliaRequest};
     use super::kademlia::{KademliaInstance, RoutingTable, Bucket};
     use super::blockchain::{Block};
-    use super::bootstrap::Bootstrap;
+    use super::bootstrap::{Bootstrap, LightNode};
     use super::aux;
     use super::{N_KBUCKETS, KEY_LEN};
     use log::{info};
@@ -256,5 +256,22 @@ mod tests {
         println!("wait: 20s");
         sleep(Duration::from_secs(20));
         boot.authnodes[1].kademlia.print_blockchain();
+    }
+
+    #[test]
+    fn bootstrap_add_node_test() {
+        let boot = Bootstrap::new();
+        //Bootstrap::init(boot.clone());
+
+        let new_node = LightNode::new(aux::get_ip().unwrap(), 1355, None);
+        let try_node = Node::new(boot.routnodes[0].node.addr.clone(), boot.routnodes[0].node.port);
+        let join = new_node.join_network(try_node);
+        
+        println!("\n******");
+        println!("Join Network: {}", join);
+        println!("LightNode:");
+        new_node.kademlia.print_routing_table();
+        println!("1st RoutingNode");
+        boot.routnodes[0].kademlia.print_routing_table();
     }
 }
