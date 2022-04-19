@@ -176,6 +176,17 @@ impl RoutingTable {
 
         res
     }
+
+    // Check if node contains key in routing table
+    pub fn contains_node(&self, key: &Key) -> bool {
+        let bucket = self.get_bucket_nodes(key);
+
+        if bucket.iter().position(|nwd| nwd.0.id == key.clone()) == None {
+            return false
+        }
+
+        true
+    }
 }
 
 impl KademliaInstance {

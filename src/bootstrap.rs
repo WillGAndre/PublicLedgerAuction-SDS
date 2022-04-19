@@ -12,7 +12,6 @@ pub struct Bootstrap {
     pub mstrnodes: Vec<MasterNode>,
     pub authnodes: Vec<AuthorityNode>,
     pub routnodes: Vec<RoutingNode>,
-    pub lightnodes: Vec<LightNode>,
 }
 
 /**
@@ -38,7 +37,6 @@ impl Bootstrap {
             mstrnodes: mst,
             authnodes: aut,
             routnodes: rt,
-            lightnodes: Vec::new(),
         };
 
         if !boot.sync_routing() {
@@ -59,7 +57,7 @@ impl Bootstrap {
             loop {
                 sleep(Duration::from_secs(20));
                 boot.broadcast_blockchain();
-                // routing 
+                boot.broadcast_routingtable();
                 // master
             }
         });
@@ -70,8 +68,8 @@ impl Bootstrap {
         let mut size = self.authnodes.len();
         for i in 0..size {
             let mut j = i+1;
+            let a1 = &self.authnodes[i];
             while j < size {
-                let a1 = &self.authnodes[i];
                 let a2 = &self.authnodes[j];
                 a1.kademlia.ping(a2.node.clone());
                 a2.kademlia.ping(a1.node.clone());
@@ -81,8 +79,8 @@ impl Bootstrap {
         size = self.routnodes.len();
         for i in 0..size {
             let mut j = i+1;
+            let r1 = &self.routnodes[i];
             while j < size {
-                let r1 = &self.routnodes[i];
                 let r2 = &self.routnodes[j];
                 r1.kademlia.ping(r2.node.clone());
                 r2.kademlia.ping(r1.node.clone());
@@ -110,8 +108,8 @@ impl Bootstrap {
         let size = self.authnodes.len();
         for i in 0..size {
             let mut j = i+1;
+            let n1 = &self.authnodes[i];
             while j < size {
-                let n1 = &self.authnodes[i];
                 let n2 = &self.authnodes[j];
                 let n1remote = n1.kademlia.query_blockchain(n2.node.clone()).unwrap();
                 let n2remote = n2.kademlia.query_blockchain(n1.node.clone()).unwrap();
@@ -122,27 +120,26 @@ impl Bootstrap {
         }
     }
 
-        /*
-         Update global routing table:
-            - Always keep bootstrap nodes in routing table,
-              even if bucket is full.
-            - Look for inconsistencies in RoutingNodes
-              routing table.
-                \
-                 -> If new node was added:
-                     ping node to verify that its online,
-                     if so update routingtable in RoutingNodes.
-                \
-                 -> Add new nodes to Bootstrap history of LightNodes,
-                    and update this history (remove old nodes).
-        */
+    fn broadcast_routingtable(&self) {
+        let mut newnodes: Vec<Node> = Vec::new();
+        let size = self.routnodes.len();
+        for i in 0..size {
+            let mut j = i+1;
+            let rn1 = &self.routnodes[i];
+            while j < size {
+                let rn2 = &self.routnodes[j];
+                newnodes.append(&mut rn1.get_unknown_nodes(rn2));
+                newnodes.append(&mut rn2.get_unknown_nodes(rn1));
+                j = j+1;
+            }
+        }
 
-    // fn broadcast_routingtable(&self) {
-    //     let size = self.routnodes.len();
-    //     for i in 0..size {
-
-    //     }
-    // }
+        if !newnodes.is_empty() {
+            for rn in self.routnodes.iter() {
+                rn.update_routing_table(newnodes.clone());
+            }
+        }
+    }
 }
 
 /*
@@ -208,7 +205,6 @@ impl AuthorityNode {
         blockchain.add_block(block.clone());
     }
 
-
     pub fn verify_chain(&self, remote: Vec<Block>) {
         let mut blockchain = self.kademlia.blockchain.lock()
             .expect("Error setting lock in blockchain");
@@ -231,43 +227,34 @@ impl RoutingNode {
         }
     }
 
-    // TODO: Add function to update routing table 
-    // with nodes not present in current routing table
-    // but present in routing table of a node belonging
-    // to bootstrap and sync routing tables of nodes. 
-    // fn contains_node(&self, node: Node) -> bool {
-    //     let routingtable = self.kademlia.routingtable.lock()
-    //         .expect("Error setting lock in routing table");
-    //     let res = routingtable.get_bucket_nodes(&node.id);
-    //     drop(routingtable);
+    fn update_routing_table(&self, nodes: Vec<Node>) {
+        let mut routingtable = self.kademlia.routingtable.lock()
+            .expect("Error setting lock in routing table");
 
-    //     if res.is_empty() {
-    //         return false
-    //     }
-    //     match res.iter().position(|n| n.0.id == node.id) {
-    //         Some(_) => {
-    //             return true
-    //         },
-    //         None => {
-    //             return false
-    //         }
-    //     }
-    // }
+        for node in nodes {
+            routingtable.update_routing_table(node);
+        }
+    } 
 
-    // TODO:
-    // fn get_unknown_nodes(&self, remotenode: RoutingNode) {
-    //     let localroutingtable = self.kademlia.routingtable.lock()
-    //         .expect("Error setting lock in routing table");
+    fn get_unknown_nodes(&self, remotenode: &RoutingNode) -> Vec<Node> {
+        let localroutingtable = self.kademlia.routingtable.lock()
+            .expect("Error setting lock in routing table");
+        let remoteroutingtable = remotenode.kademlia.routingtable.lock()
+            .expect("Error setting lock in routing table");
 
-    //     let remoteroutingtable = remotenode.kademlia.routingtable.lock()
-    //         .expect("Error setting lock in routing table");
+        let mut nodes = Vec::new();
+        for bucket in remoteroutingtable.kbuckets.iter() {
+            for node in bucket.nodes.iter() {
+                if !localroutingtable.contains_node(&node.id) {
+                    nodes.push(node.clone())
+                }
+            }
+        }
+        drop(localroutingtable);
+        drop(remoteroutingtable);
 
-    //     for (localbucket, remotebucket) in localroutingtable.kbuckets.iter()
-    //         .zip(remoteroutingtable.kbuckets.iter()) {
-    //             let localnodes = localbucket.nodes.clone();
-    //             let remotenodes = remotebucket.nodes.clone();
-    //     }
-    // }
+        nodes
+    }
 }
 
 #[derive(Clone)]

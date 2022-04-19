@@ -261,7 +261,7 @@ mod tests {
     #[test]
     fn bootstrap_add_node_test() {
         let boot = Bootstrap::new();
-        //Bootstrap::init(boot.clone());
+        Bootstrap::init(boot.clone());
 
         let new_node = LightNode::new(aux::get_ip().unwrap(), 1355, None);
         let try_node = Node::new(boot.routnodes[0].node.addr.clone(), boot.routnodes[0].node.port);
@@ -273,5 +273,14 @@ mod tests {
         new_node.kademlia.print_routing_table();
         println!("1st RoutingNode");
         boot.routnodes[0].kademlia.print_routing_table();
+        println!("2nd RoutingNode");
+        boot.routnodes[1].kademlia.print_routing_table();
+
+        println!("wait: 20s");
+        sleep(Duration::from_secs(20));
+        // 1355 will now be present in rn1 routing table
+        // as well as in rn0.
+        println!("2nd RoutingNode");
+        boot.routnodes[1].kademlia.print_routing_table();
     }
 }
