@@ -168,27 +168,28 @@ impl Bootstrap {
             nodes: res
         };
 
-        boot.sync_routing();
+        boot.sync();
 
         boot
     }
 
-    fn sync_routing(&self) {
-        // sync func (ping)
+    fn sync(&self) {
         let mut i = 0;
         while i < self.nodes.len() {
-            let mut j = i+1;
+            self.nodes[i].add_block(format!("REGISTER: {id}", id=self.nodes[i].node.get_addr()));
+            let mut j = 0;
             while j < self.nodes.len() {
-                self.nodes[i].kademlia.ping(self.nodes[j].node.clone());
-                self.nodes[j].kademlia.ping(self.nodes[i].node.clone());
+                if i != j {
+                    self.nodes[i].kademlia.ping(self.nodes[j].node.clone());
+                    self.nodes[j].kademlia.ping(self.nodes[i].node.clone());
+                    self.nodes[j].choose_chain(self.nodes[i].clone());
+                    self.nodes[i].choose_chain(self.nodes[j].clone());
+                }
                 j += 1;
             }
             i += 1;
         }
     }
-
-    //TODO 
-    // sync_chain + verify global blockchain
 
     //NOTE: blockchain should be queried before any action 
 }
@@ -246,22 +247,47 @@ impl AppNode {
 
                 return true
             } else {
-                println!("\t[LT{}]: Error joining network - No nearby nodes found", self.node.port)
+                println!("\t[AN{}]: Error joining network - No nearby nodes found", self.node.port)
             }
         } else {
             // TODO
-            println!("\t[LT{}]: Error joining network", self.node.port)
+            println!("\t[AN{}]: Error joining network", self.node.port)
         }
         false
     }
 
-    pub fn mine_block(&self, data: String) -> Block {
+    pub fn add_block(&self, data: String) {
+        let block = self.mine_block(data.clone());
         let mut blockchain = self.kademlia.blockchain.lock()
+            .expect("Error setting lock in local blockchain");
+        blockchain.add_block(block.clone());
+        drop(blockchain);
+        
+        // ---
+        println!("\t[AN{}]: Added Block info ({})", self.node.port, data)
+    }
+
+    fn mine_block(&self, data: String) -> Block {
+        let blockchain = self.kademlia.blockchain.lock()
             .expect("Error setting lock in local blockchain");
         let id = blockchain.blocks[blockchain.blocks.len() - 1].id + 1;
         let prev_hash = blockchain.blocks[blockchain.blocks.len() - 1].hash.to_string();
+        drop(blockchain);
 
         Block::new(id, prev_hash, data)
+    }
+
+    fn choose_chain(&self, appnode: AppNode) {
+        let query_blockchain = full_rpc_proc(&self.kademlia.rpc, KademliaRequest::QueryLocalBlockChain, appnode.node.clone());
+        if let Some(KademliaResponse::QueryLocalBlockChain(remoteblocks)) = query_blockchain {
+            let mut blockchain = self.kademlia.blockchain.lock()
+                .expect("Error setting lock in blockchain");
+            blockchain.blocks = blockchain.choose_chain(blockchain.blocks.clone(), remoteblocks.clone());
+            drop(blockchain);
+
+            // ---
+            println!("\t[AN{}]: Updated blockchain ({:?})", self.node.port, remoteblocks)
+        }
     }
 }
 

@@ -68,9 +68,9 @@ fn mine_block(id: u64, timestamp: i64, prev_hash: &str, data: &str) -> (u64, Str
         let bin_hash = hash_to_binary(&hash);
         if bin_hash.starts_with(DIFFICULTY_PREFIX) {
             let hex_hash = hex::encode(&hash);
-            println!("mined nonce: {}, hash: {}, bin hash: {}",
-                nonce, hex_hash, bin_hash
-            );
+            //println!("mined nonce: {}, hash: {}, bin hash: {}",
+            //    nonce, hex_hash, bin_hash
+            //);
             return (nonce, hex_hash);
         }
         nonce += 1;

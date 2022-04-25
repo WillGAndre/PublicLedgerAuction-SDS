@@ -244,6 +244,7 @@ mod tests {
     #[test]
     fn bootstrap_test() {
         let boot = Bootstrap::new();
+        println!("/n/n");
         boot.nodes[0].kademlia.print_blockchain();
 
         let register = boot.nodes[0].join_network(boot.nodes[1].clone());
