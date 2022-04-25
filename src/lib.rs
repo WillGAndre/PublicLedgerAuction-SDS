@@ -283,4 +283,46 @@ mod tests {
         println!("2nd RoutingNode");
         boot.routnodes[1].kademlia.print_routing_table();
     }
+
+    /*
+        TODO: add full test (with node addition + blockchain insert) x2
+    */
+
+    #[test]
+    fn fullscale_test() {
+        let boot = Bootstrap::new();
+        Bootstrap::init(boot.clone());
+
+        let entry_node = Node::new(boot.routnodes[0].node.addr.clone(), boot.routnodes[0].node.port);
+        let ln1 = LightNode::new(aux::get_ip().unwrap(), 1355, None);
+        let ln2 = LightNode::new(aux::get_ip().unwrap(), 1356, None);
+
+        let ln1_register = ln1.join_network(entry_node.clone());
+        println!("LN1 Register: {}", ln1_register);
+
+        let ln2_register = ln2.join_network(entry_node);
+        println!("LN2 Register: {}", ln2_register);
+
+        boot.authnodes[0].add_block(Block::new(1, "0000f816a87f806bb0073dcf026a64fb40c946b5abee2573702828694d5b4c43".to_string(), "test0".to_string()));
+        boot.authnodes[1].add_block(Block::new(1, "0000f816a87f806bb0073dcf026a64fb40c946b5abee2573702828694d5b4c43".to_string(), "test1".to_string()));
+
+        println!("wait: 20s");
+        sleep(Duration::from_secs(20));
+        println!("1st RoutingNode");
+        boot.routnodes[0].kademlia.print_routing_table();
+        println!("2nd RoutingNode");
+        boot.routnodes[1].kademlia.print_routing_table();
+        println!("1st AuthNode:");
+        boot.authnodes[0].kademlia.print_blockchain();
+        println!("2nd AuthNode:");
+        boot.authnodes[1].kademlia.print_blockchain();
+
+        println!();
+        println!("wait: 20s");
+        sleep(Duration::from_secs(20));
+        println!("1st AuthNode:");
+        boot.authnodes[0].kademlia.print_blockchain();
+        println!("2nd AuthNode:");
+        boot.authnodes[1].kademlia.print_blockchain();
+    }
 }

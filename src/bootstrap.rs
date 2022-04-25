@@ -15,7 +15,6 @@ pub struct Bootstrap {
 }
 
 /**
- * TODO:
  *  - Add init function as in rpc.rs
  *      where:
  *              blockchain is broadcasted (within AuthNodes)
@@ -120,6 +119,12 @@ impl Bootstrap {
         }
     }
 
+    /*
+        Only syncs routingtable of
+        routing nodes. Thus, if Lightnode
+        is present in other bootstrap node
+        the "global" routing table wont be notified.
+    */
     fn broadcast_routingtable(&self) {
         let mut newnodes: Vec<Node> = Vec::new();
         let size = self.routnodes.len();
@@ -142,8 +147,29 @@ impl Bootstrap {
     }
 }
 
+//  ***
+//  ---
+//  ***
+
+
 /*
-    TODO:
+    Upon creation, AppNode needs to:
+        - join kad network
+        - get global blockchain and register (mine/add_block) block
+        in blockchain
+*/
+
+#[derive(Clone)]
+pub struct AppNode {
+    pub node: Node,
+    pub kademlia: KademliaInstance
+}
+
+//  ***
+//  ---
+//  ***
+
+/*
         MasterNode:
             Functionalities - Validate global blockchain (local AuthNode blockchain) with local /
                               Update global blockchain (given error, etc) /
@@ -152,7 +178,11 @@ impl Bootstrap {
         
         AuthorityNode:
             Functionalities - Receive mining requests (process block addition to blockchain) /
-                              Distribute blockchain information (as broadcast)
+                              Distribute blockchain information (as broadcast) /
+                              Keep persistent up to date copy of blockchain in hashmap (?)
+                                \
+                                 --> Continue bootstrap instance from previous blockchain
+                                     stored persistently
 
         RoutingNode:
             Functionalities - Distribute routing information /
@@ -269,6 +299,11 @@ impl LightNode {
             node: Node::new(addr.clone(), port.clone()),
             kademlia: KademliaInstance::new(addr, port, bootstrap)
         }
+        
+        // range addr / range ports
+        //  1355: 1340-1370 / 192.178.0.1: 192.178.0.1
+        // ping
+        // join_network
     }
 
     /*
