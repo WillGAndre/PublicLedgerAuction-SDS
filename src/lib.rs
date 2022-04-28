@@ -30,7 +30,7 @@ mod tests {
     use super::rpc::{Rpc, KademliaRequest};
     use super::kademlia::{KademliaInstance, RoutingTable, Bucket};
     use super::blockchain::{Block};
-    use super::bootstrap::{Bootstrap};
+    use super::bootstrap::{Bootstrap, AppNode};
     use super::aux;
     use super::{N_KBUCKETS, KEY_LEN};
     use log::{info};
@@ -244,62 +244,37 @@ mod tests {
     #[test]
     fn bootstrap_test() {
         let boot = Bootstrap::new();
-        println!("/n/n");
-        boot.nodes[0].kademlia.print_blockchain();
+        let appnode = AppNode::new(aux::get_ip().unwrap(), 1335, None);
 
-        let register = boot.nodes[0].join_network(boot.nodes[1].clone());
+        println!();
+
+        let register = appnode.join_network(boot.nodes[0].clone());
         println!("Register: {}", register);
 
-        boot.nodes[0].kademlia.print_blockchain();
-        boot.nodes[1].kademlia.print_blockchain();
+        appnode.kademlia.print_routing_table();
+        println!(" --- ");
+        boot.nodes[0].kademlia.print_routing_table();
+        println!(" --- ");
+        boot.nodes[1].kademlia.print_routing_table();
+        println!(" --- ");
+        boot.nodes[2].kademlia.print_routing_table();
+        println!(" --- ");
+        boot.nodes[3].kademlia.print_routing_table();
+
+        // appnode.kademlia.print_blockchain();
+        // println!(" --- ");
+        // boot.nodes[0].kademlia.print_blockchain();
+        // println!(" --- ");
+        // boot.nodes[1].kademlia.print_blockchain();
+        // println!(" --- ");
+        // boot.nodes[2].kademlia.print_blockchain();
     }
 
-    // #[test]
-    // fn bootstrap_test() {
-    //     let boot = Bootstrap::new();
-    //     Bootstrap::init(boot.clone());
-    //     //boot.mstrnodes[0].kademlia.print_routing_table();
-
-    //     boot.authnodes[0].add_block(Block::new(1, "0000f816a87f806bb0073dcf026a64fb40c946b5abee2573702828694d5b4c43".to_string(), "test".to_string()));
-
-    //     // Not syncronized
-    //     //boot.authnodes[0].kademlia.print_blockchain();
-    //     boot.authnodes[1].kademlia.print_blockchain();
-
-    //     println!("wait: 20s");
-    //     sleep(Duration::from_secs(20));
-    //     boot.authnodes[1].kademlia.print_blockchain();
-    // }
-
-    // #[test]
-    // fn bootstrap_add_node_test() {
-    //     let boot = Bootstrap::new();
-    //     Bootstrap::init(boot.clone());
-
-    //     let new_node = LightNode::new(aux::get_ip().unwrap(), 1355, None);
-    //     let try_node = Node::new(boot.routnodes[0].node.addr.clone(), boot.routnodes[0].node.port);
-    //     let join = new_node.join_network(try_node);
-        
-    //     println!("\n******");
-    //     println!("Join Network: {}", join);
-    //     println!("LightNode:");
-    //     new_node.kademlia.print_routing_table();
-    //     println!("1st RoutingNode");
-    //     boot.routnodes[0].kademlia.print_routing_table();
-    //     println!("2nd RoutingNode");
-    //     boot.routnodes[1].kademlia.print_routing_table();
-
-    //     println!("wait: 20s");
-    //     sleep(Duration::from_secs(20));
-    //     // 1355 will now be present in rn1 routing table
-    //     // as well as in rn0.
-    //     println!("2nd RoutingNode");
-    //     boot.routnodes[1].kademlia.print_routing_table();
-    // }
-
-    // /*
-    //     TODO: add full test (with node addition + blockchain insert) x2
-    // */
+    /*
+        TODO: 
+         - Create test with bootstrap and addition of new node (AppNode)
+         - Create full scale test
+    */
 
     // #[test]
     // fn fullscale_test() {

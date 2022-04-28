@@ -163,6 +163,7 @@ impl Bootstrap {
         res.push(AppNode::new(get_ip().unwrap(), 1330, None));
         res.push(AppNode::new(get_ip().unwrap(), 1331, None));
         res.push(AppNode::new(get_ip().unwrap(), 1332, None));
+        res.push(AppNode::new(get_ip().unwrap(), 1333, None));
 
         let boot = Self {
             nodes: res
@@ -190,8 +191,6 @@ impl Bootstrap {
             i += 1;
         }
     }
-
-    //NOTE: blockchain should be queried before any action 
 }
 
 #[derive(Clone)]
@@ -200,6 +199,7 @@ pub struct AppNode {
     pub kademlia: KademliaInstance
 }
 
+//NOTE: blockchain should be queried before any action 
 impl AppNode {
     pub fn new(addr: String, port: u16, bootstrap: Option<Node>) -> Self {
         Self {
