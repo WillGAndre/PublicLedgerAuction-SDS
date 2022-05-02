@@ -1,6 +1,7 @@
 use sha2::{Digest, Sha256};
 use serde::{Serialize, Deserialize};
 use chrono::prelude::*;
+use std::fmt::{Display, Formatter, Result};
 
 /**
  * Hash (of data in block) must start with 00.
@@ -74,6 +75,12 @@ fn mine_block(id: u64, timestamp: i64, prev_hash: &str, data: &str) -> (u64, Str
             return (nonce, hex_hash);
         }
         nonce += 1;
+    }
+}
+
+impl Display for Blockchain {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "{:?}", self.blocks)
     }
 }
 
@@ -158,6 +165,10 @@ impl Blockchain {
         } else {
             panic!("Local and remote chains both invalid");
         }
+    }
+
+    pub fn string(&self) -> String {
+        self.to_string()
     }
 }
 

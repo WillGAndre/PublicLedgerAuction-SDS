@@ -241,6 +241,10 @@ mod tests {
         println!("res12: {:?}", res12);
     }
 
+    // NOTE: appnode and join network (bootnode0) have the same global (updated) blockchain,
+    //       while bootnode1/2/3 still have the local chain.
+    //
+    // IMP:  blockchain should be queried before any action 
     #[test]
     fn bootstrap_test() {
         let boot = Bootstrap::new();
@@ -251,15 +255,46 @@ mod tests {
         let register = appnode.join_network(boot.nodes[0].clone());
         println!("Register: {}", register);
 
-        appnode.kademlia.print_routing_table();
-        println!(" --- ");
-        boot.nodes[0].kademlia.print_routing_table();
-        println!(" --- ");
-        boot.nodes[1].kademlia.print_routing_table();
-        println!(" --- ");
-        boot.nodes[2].kademlia.print_routing_table();
-        println!(" --- ");
-        boot.nodes[3].kademlia.print_routing_table();
+        let appnodechain = appnode.kademlia.blockchain.lock()
+            .expect("Error setting lock in test");
+        let appnodechain_str = appnodechain.string();
+        drop(appnodechain);
+        let boot0chain = boot.nodes[0].kademlia.blockchain.lock()
+            .expect("Error setting lock in test");
+        let bootchain_str = boot0chain.string();
+        drop(boot0chain);
+
+        assert_eq!(appnodechain_str, bootchain_str);
+
+        let boot1chain = boot.nodes[1].kademlia.blockchain.lock()
+            .expect("Error setting lock in test");
+        let boot1chain_str = boot1chain.string();
+        drop(boot1chain);
+
+        let boot2chain = boot.nodes[2].kademlia.blockchain.lock()
+            .expect("Error setting lock in test");
+        let boot2chain_str = boot2chain.string();
+        drop(boot2chain);
+
+        let boot3chain = boot.nodes[3].kademlia.blockchain.lock()
+            .expect("Error setting lock in test");
+        let boot3chain_str = boot3chain.string();
+        drop(boot3chain);
+
+        assert_eq!(boot1chain_str, boot2chain_str);
+        assert_eq!(boot1chain_str, boot3chain_str);
+        assert_eq!(boot2chain_str, boot2chain_str);
+        
+        // prints ---
+        // appnode.kademlia.print_routing_table();
+        // println!(" --- ");
+        // boot.nodes[0].kademlia.print_routing_table();
+        // println!(" --- ");
+        // boot.nodes[1].kademlia.print_routing_table();
+        // println!(" --- ");
+        // boot.nodes[2].kademlia.print_routing_table();
+        // println!(" --- ");
+        // boot.nodes[3].kademlia.print_routing_table();
 
         // appnode.kademlia.print_blockchain();
         // println!(" --- ");
@@ -269,12 +304,6 @@ mod tests {
         // println!(" --- ");
         // boot.nodes[2].kademlia.print_blockchain();
     }
-
-    /*
-        TODO: 
-         - Create test with bootstrap and addition of new node (AppNode)
-         - Create full scale test
-    */
 
     // #[test]
     // fn fullscale_test() {
