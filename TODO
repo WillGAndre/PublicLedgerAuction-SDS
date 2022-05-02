@@ -1,10 +1,4 @@
-(Kademlia)
-    - Finish make_response()
-        \
-         --> Start with find_node response then
-             find_value.
-             
-    - Finish find_node()
+- Node types
 
 
 ----

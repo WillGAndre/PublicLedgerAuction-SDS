@@ -2,6 +2,8 @@ pub mod node;
 pub mod aux;
 pub mod rpc;
 pub mod kademlia;
+pub mod blockchain;
+pub mod bootstrap;
 
 /**
  * BASED ON: KademliaBriefOverview.pdf 
@@ -27,9 +29,13 @@ mod tests {
     use super::node::{Node, NodeWithDistance, Distance, Key};
     use super::rpc::{Rpc, KademliaRequest};
     use super::kademlia::{KademliaInstance, RoutingTable, Bucket};
+    use super::blockchain::{Block};
+    use super::bootstrap::{Bootstrap, AppNode};
     use super::aux;
     use super::{N_KBUCKETS, KEY_LEN};
     use log::{info};
+    use std::time::Duration;
+    use std::thread::{sleep};
 
     #[test]
     fn node_with_dist_test() {
@@ -153,7 +159,8 @@ mod tests {
         // println!("\n");
         // kad2.print_routing_table();
 
-        println!("Is node2 and node3 stored in the same bucket: {}", kad1.same_bucket(&node2.id.clone(), &node3.id.clone()));
+        let same_bucket = kad1.same_bucket(&node2.id.clone(), &node3.id.clone());
+        println!("Is node2 and node3 stored in the same bucket: {}", same_bucket);
         let find_node3 = kad1.find_node(&node3.id.clone());
         // let d12 = Distance::new(&node1.id.clone(), &node2.id.clone());
         let d13 = Distance::new(&node1.id.clone(), &node3.id.clone());
@@ -163,13 +170,21 @@ mod tests {
         let node1_index = find_node3.iter().position(|n| n.0.id == node1.id);
         let node2_index = find_node3.iter().position(|n| n.0.id == node2.id);
         let node3_index = find_node3.iter().position(|n| n.0.id == node3.id);
+
+        // println!("find_node3: {:?}", find_node3);
         
         match node1_index {
             Some(i) => {
                 let nwd = find_node3[i].clone();
                 assert_eq!(nwd.1, d13);
             },
-            None => assert_ne!(node1_index, None)
+            None => {
+                if same_bucket {
+                    assert_eq!(node1_index, None)
+                } else {
+                    assert_ne!(node1_index, None)
+                }
+            }
         }
         match node2_index {
             Some(i) => {
@@ -211,4 +226,117 @@ mod tests {
         // println!("KAD3:");
         // _kad3.print_hashmap();
     }
+
+    #[test]
+    fn blockchain_test() {
+        let node1 = Node::new(aux::get_ip().unwrap(), 1350);
+        let node2 = Node::new(aux::get_ip().unwrap(), 1351);
+
+        let kad1 = KademliaInstance::new(node1.addr.clone(), node1.port.clone(), Some(node2.clone()));
+        let kad2 = KademliaInstance::new(node2.addr.clone(), node2.port.clone(), Some(node1.clone()));
+
+        let res21 = kad2.query_blockchain(node1.clone());
+        let res12 = kad1.query_blockchain(node2.clone());
+        println!("res12: {:?}", res21);
+        println!("res12: {:?}", res12);
+    }
+
+    // NOTE: appnode and join network (bootnode0) have the same global (updated) blockchain,
+    //       while bootnode1/2/3 still have the local chain.
+    //
+    // IMP:  blockchain should be queried before any action 
+    #[test]
+    fn bootstrap_test() {
+        let boot = Bootstrap::new();
+        let appnode = AppNode::new(aux::get_ip().unwrap(), 1335, None);
+
+        println!();
+
+        let register = appnode.join_network(boot.nodes[0].clone());
+        println!("Register: {}", register);
+
+        let appnodechain = appnode.kademlia.blockchain.lock()
+            .expect("Error setting lock in test");
+        let appnodechain_str = appnodechain.string();
+        drop(appnodechain);
+        let boot0chain = boot.nodes[0].kademlia.blockchain.lock()
+            .expect("Error setting lock in test");
+        let bootchain_str = boot0chain.string();
+        drop(boot0chain);
+
+        assert_eq!(appnodechain_str, bootchain_str);
+
+        let boot1chain = boot.nodes[1].kademlia.blockchain.lock()
+            .expect("Error setting lock in test");
+        let boot1chain_str = boot1chain.string();
+        drop(boot1chain);
+
+        let boot2chain = boot.nodes[2].kademlia.blockchain.lock()
+            .expect("Error setting lock in test");
+        let boot2chain_str = boot2chain.string();
+        drop(boot2chain);
+
+        let boot3chain = boot.nodes[3].kademlia.blockchain.lock()
+            .expect("Error setting lock in test");
+        let boot3chain_str = boot3chain.string();
+        drop(boot3chain);
+
+        assert_eq!(boot1chain_str, boot2chain_str);
+        assert_eq!(boot1chain_str, boot3chain_str);
+        assert_eq!(boot2chain_str, boot2chain_str);
+        
+        // prints ---
+        // appnode.kademlia.print_routing_table();
+        // println!(" --- ");
+        // boot.nodes[0].kademlia.print_routing_table();
+        // println!(" --- ");
+        // boot.nodes[1].kademlia.print_routing_table();
+        // println!(" --- ");
+        // boot.nodes[2].kademlia.print_routing_table();
+        // println!(" --- ");
+        // boot.nodes[3].kademlia.print_routing_table();
+
+        // appnode.kademlia.print_blockchain();
+        // println!(" --- ");
+        // boot.nodes[0].kademlia.print_blockchain();
+        // println!(" --- ");
+        // boot.nodes[1].kademlia.print_blockchain();
+        // println!(" --- ");
+        // boot.nodes[2].kademlia.print_blockchain();
+    }
+
+    // #[test]
+    // fn fullscale_test() {
+    //     let boot = Bootstrap::new();node: Nodes[0].node.addr.clone(), boot.routnodes[0].node.port);
+    //     let ln1 = LightNode::new(aux::get_ip().unwrap(), 1355, None);
+    //     let ln2 = LightNode::new(aux::get_ip().unwrap(), 1356, None);
+
+    //     let ln1_register = ln1.join_network(entry_node.clone());
+    //     println!("LN1 Register: {}", ln1_register);
+
+    //     let ln2_register = ln2.join_network(entry_node);
+    //     println!("LN2 Register: {}", ln2_register);
+
+    //     boot.authnodes[0].add_block(Block::new(1, "0000f816a87f806bb0073dcf026a64fb40c946b5abee2573702828694d5b4c43".to_string(), "test0".to_string()));
+    //     boot.authnodes[1].add_block(Block::new(1, "0000f816a87f806bb0073dcf026a64fb40c946b5abee2573702828694d5b4c43".to_string(), "test1".to_string()));
+
+    //     println!("wait: 20s");
+    //     sleep(Duration::from_secs(20));
+    //     println!("1st RoutingNode");
+    //     boot.routnodes[0].kademlia.print_routing_table();
+    //     println!("2nd RoutingNode");
+    //     boot.routnodes[1].kademlia.print_routing_table();
+    //     println!("1st AuthNode:");
+    //     boot.authnodes[0].kademlia.print_blockchain();
+    //     println!("2nd AuthNode:");
+    //     boot.authnodes[1].kademlia.print_blockchain();
+
+    //     println!();
+    //     println!("wait: 20s");
+    //     sleep(Duration::from_secs(20));
+    //     println!("1st AuthNode:");
+    //     boot.authnodes[0].kademlia.print_blockchain();
+    //     println!("2nd AuthNode:");
+    //     boot.authnodes[1].kademlia.print_blockchain();
+    // }
 }

@@ -6,6 +6,7 @@ use super::rpc::{
 };
 use super::node::{Node, Key, Distance, NodeWithDistance};
 use super::{K_PARAM, N_KBUCKETS, KEY_LEN, ALPHA, TREPLICATE};
+use super::blockchain::{Blockchain, Block};
 
 use crossbeam_channel;
 use std::thread::{JoinHandle, spawn, sleep};
@@ -42,6 +43,7 @@ pub struct KademliaInstance {
     pub routingtable: Arc<Mutex<RoutingTable>>,
     pub hashmap: Arc<Mutex<HashMap<String, String>>>,
     pub node: Node,
+    pub blockchain: Arc<Mutex<Blockchain>>,
 }
 
 impl Bucket {
@@ -126,7 +128,7 @@ impl RoutingTable {
     }
 
     // Routing table update function: Updates routing table with new node
-    fn update_routing_table(&mut self, node: Node) {
+    pub fn update_routing_table(&mut self, node: Node) {
         let bucketindex = self.get_bucket_index(&node.id);
 
         if self.kbuckets[bucketindex].nodes.len() < K_PARAM {
@@ -159,7 +161,7 @@ impl RoutingTable {
      *         we are searching for, which is node2.id.
      *         Thus the distance between both ids will be 0.
     */
-    fn get_bucket_nodes(&self, key: &Key) -> Vec<NodeWithDistance> {
+    pub fn get_bucket_nodes(&self, key: &Key) -> Vec<NodeWithDistance> {
         let mut res = Vec::new();
         let bucketindex = self.get_bucket_index(key);
 
@@ -174,12 +176,25 @@ impl RoutingTable {
 
         res
     }
+
+    // Check if node contains key in routing table
+    pub fn contains_node(&self, key: &Key) -> bool {
+        let bucket = self.get_bucket_nodes(key);
+
+        if bucket.iter().position(|nwd| nwd.0.id == key.clone()) == None {
+            return false
+        }
+
+        true
+    }
 }
 
 impl KademliaInstance {
     pub fn new(ip: String, port: u16, bootstrap: Option<Node>) -> Self {
         let node = Node::new(ip, port);
         let routingtable = RoutingTable::new(node.clone(), bootstrap);
+        let mut blockchain = Blockchain::new();
+        blockchain.genesis();
 
         // RPC channels
         let (rpc_sender, rpc_receiver) = crossbeam_channel::unbounded();
@@ -191,6 +206,7 @@ impl KademliaInstance {
             routingtable: Arc::new(Mutex::new(routingtable)),
             hashmap: Arc::new(Mutex::new(HashMap::new())),
             node: node.clone(),
+            blockchain: Arc::new(Mutex::new(blockchain))
         };
 
         kad.clone().requests_handler(rpc_receiver);
@@ -492,6 +508,17 @@ impl KademliaInstance {
         }
     }
 
+    // Query node for local blockchain
+    pub fn query_blockchain(&self, qynode: Node) -> Option<Vec<Block>> {
+        let res = full_rpc_proc(&self.rpc, KademliaRequest::QueryLocalBlockChain, qynode.clone());
+
+        if let Some(KademliaResponse::QueryLocalBlockChain(blockchain)) = res {
+            Some(blockchain)
+        } else {
+            None
+        }
+    }
+
     /** 
      * Requests handler & Response constructor
     */
@@ -565,6 +592,27 @@ impl KademliaInstance {
                     }
                 }
             },
+
+            KademliaRequest::AddBlock(ref block) => {
+                let mut blockchain = self.blockchain.lock()
+                    .expect("Error setting lock in local blockchain");
+                blockchain.add_block(block.clone());
+                (KademliaResponse::Ping, request)
+            },
+            KademliaRequest::QueryLocalBlockChain => {
+                let blockchain = self.blockchain.lock()
+                    .expect("Error setting lock in local blockchain");
+                (KademliaResponse::QueryLocalBlockChain(blockchain.blocks.clone()), request)
+            },
+
+            KademliaRequest::NodeJoin(ref node) => {
+                let nodes: Vec<Node> = self.find_node(&node.id).iter().map(|nwd| nwd.0.clone()).collect();
+                let mut routingtable = self.routingtable.lock()
+                    .expect("Error setting lock in routing table");
+                routingtable.update_routing_table(node.clone());
+                
+                (KademliaResponse::NodeJoin(nodes), request)
+            },
         }
     }
     
@@ -593,5 +641,11 @@ impl KademliaInstance {
         let hashmap = self.hashmap.lock()
             .expect("Error setting lock in hasmap");
         println!("{:?}", hashmap);
+    }
+
+    pub fn print_blockchain(&self) {
+        let blockchain = self.blockchain.lock()
+            .expect("Error setting lock in local blockchain");
+        println!("{:?}", blockchain)
     }
 }

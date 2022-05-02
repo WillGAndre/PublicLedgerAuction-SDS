@@ -9,6 +9,7 @@ use std::thread;
 use std::time::{SystemTime, Duration};
 
 use super::node::{Key, NodeWithDistance, Node};
+use super::blockchain::{Block};
 use super::TREPLICATE;
 
 // ENUM -> define types
@@ -24,6 +25,13 @@ pub enum KademliaRequest {
     Store(String, String),
     QueryNode(Key),
     QueryValue(String),
+
+    // BLOCKCHAIN REQUESTS ----
+    QueryLocalBlockChain,
+    AddBlock(Block),
+    // ----
+
+    NodeJoin(Node)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -31,6 +39,12 @@ pub enum KademliaResponse {
     Ping,
     QueryNode(Vec<NodeWithDistance>),
     QueryValue(QueryValueResult),
+
+    // BLOCKCHAIN RESPONSES ----
+    QueryLocalBlockChain(Vec<Block>),
+    // ----
+
+    NodeJoin(Vec<Node>)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -122,7 +136,7 @@ impl Rpc {
                 }
 
                 // RPC prints
-                println!("From {:?} to {:?}: {:?}", &content.src, &content.dst, &content.payload);
+                // println!("From {:?} to {:?}: {:?}", &content.src, &content.dst, &content.payload);
 
                 match content.payload {
                     RpcPayload::Request(kadrequest) => {
