@@ -1,5 +1,6 @@
 use super::kademlia::{KademliaInstance};
 use super::blockchain::Block;
+use super::pubsub::PubSubInstance;
 use super::node::{Node};
 use super::aux::get_ip;
 use super::rpc::{full_rpc_proc, KademliaRequest, KademliaResponse};
@@ -196,16 +197,23 @@ impl Bootstrap {
 #[derive(Clone)]
 pub struct AppNode {
     pub node: Node,
-    pub kademlia: KademliaInstance
+    pub kademlia: KademliaInstance,
+    pub pubsub: PubSubInstance
 }
 
 //NOTE: blockchain should be queried before any action 
 impl AppNode {
     pub fn new(addr: String, port: u16, bootstrap: Option<Node>) -> Self {
+        let node = Node::new(addr.clone(), port.clone());
         Self {
-            node: Node::new(addr.clone(), port.clone()),
-            kademlia: KademliaInstance::new(addr, port, bootstrap)
+            node: node.clone(),
+            kademlia: KademliaInstance::new(addr, port, bootstrap),
+            pubsub: PubSubInstance::new(node.id)
         }
+    }
+
+    pub fn publish(&self, topic: String) {
+        self.kademlia.insert(topic, self.pubsub.to_string())
     }
 
     // register method - arg: AppNode

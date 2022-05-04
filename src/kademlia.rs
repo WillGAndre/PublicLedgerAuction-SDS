@@ -255,6 +255,8 @@ impl KademliaInstance {
             let mut hashmap = self.hashmap.lock()
                 .expect("");
             hashmap.insert(keystr, value);
+
+            // println!("\t[AN{}]: Added to self DHT", self.node.port)
         } else {
             for NodeWithDistance(node, _) in nodes {
                 let kad = self.clone();
@@ -262,6 +264,8 @@ impl KademliaInstance {
                 let value = value.clone();
                 kad.store_value(node, keystr, value);
             }
+
+            // println!("\t[AN{}]: Added to other DHT", self.node.port)
         }
     }
 
@@ -271,13 +275,25 @@ impl KademliaInstance {
         if value == None {
             let hashmap = self.hashmap.lock()
                     .expect("Error setting lock in hashmap");
-            let value = hashmap.get(&key).unwrap();
-            Some(value.to_string())
+            let value = hashmap.get(&key);
+            if value != None {
+                return Some(value.unwrap().to_string())
+            }
+            None
         } else {
             value.map(|val| {
+                // H1:
                 if let Some(NodeWithDistance(node, _)) = nodes.pop() {
                     self.store_value(node, key, val.clone());
                 }
+
+                // H2:
+                // for NodeWithDistance(node, _) in nodes {
+                //     let kad = self.clone();
+                //     let keystr = key.clone();
+                //     let value = val.clone();
+                //     kad.store_value(node, keystr, value);
+                // }
 
                 val
             })
@@ -637,10 +653,12 @@ impl KademliaInstance {
         println!("{:?}", routingtable);
     }
 
-    pub fn print_hashmap(&self) {
+    pub fn print_hashmap(&self) -> String {
         let hashmap = self.hashmap.lock()
             .expect("Error setting lock in hasmap");
-        println!("{:?}", hashmap);
+        let hashmap_clone = hashmap.clone();
+        drop(hashmap);
+        format!("{:?}", hashmap_clone)
     }
 
     pub fn print_blockchain(&self) {

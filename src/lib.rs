@@ -4,6 +4,7 @@ pub mod rpc;
 pub mod kademlia;
 pub mod blockchain;
 pub mod bootstrap;
+pub mod pubsub;
 
 /**
  * BASED ON: KademliaBriefOverview.pdf 
@@ -305,38 +306,50 @@ mod tests {
         // boot.nodes[2].kademlia.print_blockchain();
     }
 
-    // #[test]
-    // fn fullscale_test() {
-    //     let boot = Bootstrap::new();node: Nodes[0].node.addr.clone(), boot.routnodes[0].node.port);
-    //     let ln1 = LightNode::new(aux::get_ip().unwrap(), 1355, None);
-    //     let ln2 = LightNode::new(aux::get_ip().unwrap(), 1356, None);
+    #[test]
+    fn pubsub_test() {
+        let boot = Bootstrap::new();
+        let appnode = AppNode::new(aux::get_ip().unwrap(), 1335, None);
 
-    //     let ln1_register = ln1.join_network(entry_node.clone());
-    //     println!("LN1 Register: {}", ln1_register);
+        println!();
 
-    //     let ln2_register = ln2.join_network(entry_node);
-    //     println!("LN2 Register: {}", ln2_register);
+        let register = appnode.join_network(boot.nodes[0].clone());
+        println!("AppNode register: {}", register);
 
-    //     boot.authnodes[0].add_block(Block::new(1, "0000f816a87f806bb0073dcf026a64fb40c946b5abee2573702828694d5b4c43".to_string(), "test0".to_string()));
-    //     boot.authnodes[1].add_block(Block::new(1, "0000f816a87f806bb0073dcf026a64fb40c946b5abee2573702828694d5b4c43".to_string(), "test1".to_string()));
+        println!();
+        println!("BootNode0 published test");
+        boot.nodes[0].publish(String::from("test"));
 
-    //     println!("wait: 20s");
-    //     sleep(Duration::from_secs(20));
-    //     println!("1st RoutingNode");
-    //     boot.routnodes[0].kademlia.print_routing_table();
-    //     println!("2nd RoutingNode");
-    //     boot.routnodes[1].kademlia.print_routing_table();
-    //     println!("1st AuthNode:");
-    //     boot.authnodes[0].kademlia.print_blockchain();
-    //     println!("2nd AuthNode:");
-    //     boot.authnodes[1].kademlia.print_blockchain();
+        // NOTE: Without gets only BootNode3 would have this topic.
+        // Because BootNode2 can find the topic, he adds the info to the
+        // first intermediate node (from the get search) (H1) or to all 
+        // intermediate nodes (H2).
+        //
+        // FOR MORE INFO: Check else statement in get (kademlia)
+        // 
+        // AppNode get fails since he has no one near the key ("test"),
+        // the node near is BootNode3 but he doesnt have him in his routingtable.
+        let get_appnode = appnode.kademlia.get(String::from("test"));
+        println!("AppNode GET: {:?}", get_appnode);
+        let get_bootnode = boot.nodes[2].kademlia.get(String::from("test"));
+        println!("BootNode2 GET: {:?}", get_bootnode);
 
-    //     println!();
-    //     println!("wait: 20s");
-    //     sleep(Duration::from_secs(20));
-    //     println!("1st AuthNode:");
-    //     boot.authnodes[0].kademlia.print_blockchain();
-    //     println!("2nd AuthNode:");
-    //     boot.authnodes[1].kademlia.print_blockchain();
-    // }
+        let query_value = appnode.kademlia.query_value(boot.nodes[0].node.clone(), String::from("test"));
+        println!("AppNode QUERY topic to BootNode0: {:?}", query_value);
+
+        println!();
+        println!("---");
+
+        println!("AppNode DHT: {}", appnode.kademlia.print_hashmap());
+        println!(" --- ");
+        println!("BootNode0 DHT: {}", boot.nodes[0].kademlia.print_hashmap());
+        println!(" --- ");
+        println!("BootNode1 DHT: {}", boot.nodes[1].kademlia.print_hashmap());
+        println!(" --- ");
+        println!("BootNode2 DHT: {}", boot.nodes[2].kademlia.print_hashmap());
+        println!(" --- ");
+        println!("BootNode3 DHT: {}", boot.nodes[3].kademlia.print_hashmap());
+    }
+
+    // TODO: Add PubSub AddMsgs / Subscribe etc.
 }

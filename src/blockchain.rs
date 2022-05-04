@@ -62,9 +62,9 @@ fn mine_block(id: u64, timestamp: i64, prev_hash: &str, data: &str) -> (u64, Str
     let mut nonce = 0;
 
     loop {
-        if nonce % 100000 == 0 {
-            //println!("nonce: {}", nonce);
-        }
+        // if nonce % 100000 == 0 {
+        //    println!("nonce: {}", nonce);
+        // }
         let hash = calc_hash(id, timestamp, prev_hash, data, nonce);
         let bin_hash = hash_to_binary(&hash);
         if bin_hash.starts_with(DIFFICULTY_PREFIX) {
