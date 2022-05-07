@@ -351,5 +351,53 @@ mod tests {
         println!("BootNode3 DHT: {}", boot.nodes[3].kademlia.print_hashmap());
     }
 
-    // TODO: Add PubSub AddMsgs / Subscribe etc.
+    #[test]
+    fn pubsub_subscribe_test() {
+        let boot = Bootstrap::new();
+        println!();
+        println!("BootNode0 published test");
+        boot.nodes[0].publish(String::from("test"));
+        let get_bootnode = boot.nodes[2].kademlia.get(String::from("test"));
+        println!("BootNode2 GET: {:?}", get_bootnode);
+        println!("BootNode2 Subscribe test: ");
+        boot.nodes[2].subscribe(String::from("test"));
+        let get_bootnode2 = boot.nodes[2].kademlia.get(String::from("test"));
+        println!("BootNode2 GET: {:?}", get_bootnode2);
+
+        let get_bootnode1 = boot.nodes[1].kademlia.get(String::from("test"));
+        println!("BootNode1 GET: {:?}", get_bootnode1);
+        println!("BootNode1 Subscribe test: ");
+        boot.nodes[1].subscribe(String::from("test"));
+
+        let appnode = AppNode::new(aux::get_ip().unwrap(), 1335, None);
+
+        println!();
+
+        let register = appnode.join_network(boot.nodes[0].clone());
+        println!("AppNode register: {}", register);
+        let get_appnode = appnode.kademlia.get(String::from("test"));
+        println!("AppNode GET: {:?}", get_appnode);
+
+        println!("AppNode Subscribe test: ");
+        appnode.subscribe(String::from("test"));
+
+        // let subscribe = appnode.subscribe_network(String::from("test"), boot.nodes[3].clone());
+        // println!("AppNode Subscribe Network test: {}", subscribe);
+        let get_appnode = appnode.kademlia.get(String::from("test"));
+        println!("AppNode GET: {:?}", get_appnode);
+
+        // println!();
+        // println!();
+        // // prints ---
+        // let get_bootnode0 = boot.nodes[0].kademlia.get(String::from("test"));
+        // println!("BootNode0 GET: {:?}", get_bootnode0);
+        // let get_bootnode1 = boot.nodes[1].kademlia.get(String::from("test"));
+        // println!("BootNode1 GET: {:?}", get_bootnode1);
+        // let get_bootnode2 = boot.nodes[2].kademlia.get(String::from("test"));
+        // println!("BootNode2 GET: {:?}", get_bootnode2);
+        // let get_bootnode3 = boot.nodes[3].kademlia.get(String::from("test"));
+        // println!("BootNode3 GET: {:?}", get_bootnode3);
+    }
+
+    // TODO: Add PubSub AddMsgs
 }

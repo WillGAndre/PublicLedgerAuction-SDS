@@ -3,7 +3,7 @@ use super::blockchain::Block;
 use super::pubsub::PubSubInstance;
 use super::node::{Node};
 use super::aux::get_ip;
-use super::rpc::{full_rpc_proc, KademliaRequest, KademliaResponse};
+use super::rpc::{full_rpc_proc, KademliaRequest, KademliaResponse, QueryValueResult};
 
 use std::time::Duration;
 use std::thread::{spawn, sleep};
@@ -198,7 +198,8 @@ impl Bootstrap {
 pub struct AppNode {
     pub node: Node,
     pub kademlia: KademliaInstance,
-    pub pubsub: PubSubInstance
+    pub pubsub: PubSubInstance,
+    pub subs: Vec<PubSubInstance>
 }
 
 //NOTE: blockchain should be queried before any action 
@@ -208,12 +209,48 @@ impl AppNode {
         Self {
             node: node.clone(),
             kademlia: KademliaInstance::new(addr, port, bootstrap),
-            pubsub: PubSubInstance::new(node.id)
+            pubsub: PubSubInstance::new(node.get_addr(), None, None),
+            subs: Vec::new(),
         }
     }
 
     pub fn publish(&self, topic: String) {
-        self.kademlia.insert(topic, self.pubsub.to_string())
+        self.kademlia.insert(topic.clone(), self.pubsub.to_string());
+        println!("\t[AN{}]: published topic: {}", self.node.port, topic)
+    }
+
+    pub fn subscribe(&self, topic: String) -> bool {
+        let pubsub = self.kademlia.get(topic.clone());
+        if pubsub == None {
+            println!("\t[AN{}]: Error subscribing to topic: {}", self.node.port, topic)
+        } else {
+            let pubsub_str = pubsub.unwrap();
+            let pubsub_ins = self.get_pubsub_instance(pubsub_str).unwrap();
+            pubsub_ins.add_sub(self.node.get_addr());
+            self.kademlia.insert(topic.clone(), pubsub_ins.to_string());
+            println!("\t[AN{}]: subscribed to topic: {}", self.node.port, topic);
+            return true
+        }
+        
+        false
+    }
+
+    // subcribe from oth node ; DEBATE: If needed
+    pub fn subscribe_network(&self, topic: String, bootnode: AppNode) -> bool {
+        let pubsub = self.kademlia.query_value(bootnode.node, topic.clone());
+
+        if let Some(pubsub) = pubsub {
+            if let QueryValueResult::Value(pubsub_str) = pubsub {
+                let pubsub_ins = self.get_pubsub_instance(pubsub_str).unwrap();
+                pubsub_ins.add_sub(self.node.get_addr());
+                self.kademlia.insert(topic.clone(), pubsub_ins.to_string());
+                println!("\t[AN{}]: subscribed to topic: {}", self.node.port, topic);
+                return true
+            }
+            println!("\t[AN{}]: Error subscribing to topic: {}", self.node.port, topic)
+        }
+        println!("\t[AN{}]: Error subscribing to topic: {}", self.node.port, topic);
+        false
     }
 
     // register method - arg: AppNode
@@ -296,6 +333,18 @@ impl AppNode {
             // ---
             println!("\t[AN{}]: Updated blockchain ({:?})", self.node.port, remoteblocks)
         }
+    }
+
+    fn get_pubsub_instance(&self, data: String) -> Option<PubSubInstance> {
+        let pattern: &[_] = &['[', ']'];
+        let data_vec: Vec<&str> = data.split(";").collect();
+        if !data_vec.is_empty() {
+            let publisher: String = String::from(data_vec[0]);
+            let substack: Vec<String> = data_vec[1].trim_matches(pattern).split(',').map(|s| String::from(s)).collect();
+            let msgstack: Vec<String> = data_vec[2].trim_matches(pattern).split(',').map(|s| String::from(s)).collect();
+            return Some(PubSubInstance::new(publisher, Some(msgstack), Some(substack)));
+        }
+        None
     }
 }
 

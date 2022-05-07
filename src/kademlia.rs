@@ -127,6 +127,28 @@ impl RoutingTable {
         res
     }
 
+    // Last resort for find_value
+    fn get_all_nodes(&self, key: &Key) -> Vec<NodeWithDistance> {
+        let mut res = Vec::new();
+
+        for index in 1..N_KBUCKETS {
+            for node in &self.kbuckets[index].nodes {
+                if res.len() == K_PARAM {
+                    break;
+                }
+                res.push(
+                    NodeWithDistance(node.clone(), Distance::new(&node.id, key))
+                );
+            }
+            if res.len() == K_PARAM {
+                break;
+            }
+        }
+
+        res.sort_by(|a, b| a.1.cmp(&b.1));
+        res
+    }
+
     // Routing table update function: Updates routing table with new node
     pub fn update_routing_table(&mut self, node: Node) {
         let bucketindex = self.get_bucket_index(&node.id);
@@ -282,19 +304,9 @@ impl KademliaInstance {
             None
         } else {
             value.map(|val| {
-                // H1:
                 if let Some(NodeWithDistance(node, _)) = nodes.pop() {
                     self.store_value(node, key, val.clone());
                 }
-
-                // H2:
-                // for NodeWithDistance(node, _) in nodes {
-                //     let kad = self.clone();
-                //     let keystr = key.clone();
-                //     let value = val.clone();
-                //     kad.store_value(node, keystr, value);
-                // }
-
                 val
             })
         }
@@ -392,6 +404,13 @@ impl KademliaInstance {
             .expect("Error setting lock in routing table");
         let mut history = HashSet::new();
         let mut nodes = BinaryHeap::from(routingtable.get_bucket_nodes(&key));
+        
+        if nodes.is_empty() {
+            nodes = BinaryHeap::from(routingtable.get_closest_nodes(&key));
+            if nodes.is_empty() {   // DEBATE: If needed
+                nodes = BinaryHeap::from(routingtable.get_all_nodes(&key));
+            }
+        }
         drop(routingtable);
 
         for entry in &nodes {
