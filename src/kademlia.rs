@@ -407,7 +407,7 @@ impl KademliaInstance {
         
         if nodes.is_empty() {
             nodes = BinaryHeap::from(routingtable.get_closest_nodes(&key));
-            if nodes.is_empty() {   // DEBATE: If needed
+            if nodes.is_empty() {
                 nodes = BinaryHeap::from(routingtable.get_all_nodes(&key));
             }
         }

@@ -7,6 +7,7 @@ use super::rpc::{full_rpc_proc, KademliaRequest, KademliaResponse, QueryValueRes
 
 use std::time::Duration;
 use std::thread::{spawn, sleep};
+use base64::decode;
 
 /**
  *  - Add init function as in rpc.rs
@@ -217,12 +218,13 @@ impl AppNode {
     pub fn publish(&self, topic: String) {
         self.kademlia.insert(topic.clone(), self.pubsub.to_string());
         println!("\t[AN{}]: published topic: {}", self.node.port, topic)
+        // TODO: Call pubsub msg loop
     }
 
     pub fn subscribe(&self, topic: String) -> bool {
         let pubsub = self.kademlia.get(topic.clone());
         if pubsub == None {
-            println!("\t[AN{}]: Error subscribing to topic: {}", self.node.port, topic)
+            println!("\t[AN{}]: Error subscribing - couldn't find topic: {}", self.node.port, topic)
         } else {
             let pubsub_str = pubsub.unwrap();
             let pubsub_ins = self.get_pubsub_instance(pubsub_str).unwrap();
@@ -235,21 +237,21 @@ impl AppNode {
         false
     }
 
-    // subcribe from oth node ; DEBATE: If needed
-    pub fn subscribe_network(&self, topic: String, bootnode: AppNode) -> bool {
-        let pubsub = self.kademlia.query_value(bootnode.node, topic.clone());
-
-        if let Some(pubsub) = pubsub {
-            if let QueryValueResult::Value(pubsub_str) = pubsub {
-                let pubsub_ins = self.get_pubsub_instance(pubsub_str).unwrap();
-                pubsub_ins.add_sub(self.node.get_addr());
+    pub fn add_msg(&self, topic: String, msg: String) -> bool {
+        let pubsub = self.kademlia.get(topic.clone());
+        if pubsub == None {
+            println!("\t[AN{}]: Error adding msg - couldn't find topic: {}", self.node.port, topic)
+        } else {
+            let pubsub_str = pubsub.unwrap();
+            let pubsub_ins = self.get_pubsub_instance(pubsub_str).unwrap();
+            if pubsub_ins.verify(self.node.get_addr()) {
+                pubsub_ins.add_msg(msg);
                 self.kademlia.insert(topic.clone(), pubsub_ins.to_string());
-                println!("\t[AN{}]: subscribed to topic: {}", self.node.port, topic);
+                println!("\t[AN{}]: added msg to topic: {}", self.node.port, topic);
                 return true
             }
-            println!("\t[AN{}]: Error subscribing to topic: {}", self.node.port, topic)
         }
-        println!("\t[AN{}]: Error subscribing to topic: {}", self.node.port, topic);
+        
         false
     }
 
@@ -336,15 +338,35 @@ impl AppNode {
     }
 
     fn get_pubsub_instance(&self, data: String) -> Option<PubSubInstance> {
+        let decoded_data = String::from_utf8(decode(data.to_string()).expect("Error decoding data"))
+            .expect("Error converting data to string");
         let pattern: &[_] = &['[', ']'];
-        let data_vec: Vec<&str> = data.split(";").collect();
+        let data_vec: Vec<&str> = decoded_data.split(";").collect();
         if !data_vec.is_empty() {
             let publisher: String = String::from(data_vec[0]);
-            let substack: Vec<String> = data_vec[1].trim_matches(pattern).split(',').map(|s| String::from(s)).collect();
-            let msgstack: Vec<String> = data_vec[2].trim_matches(pattern).split(',').map(|s| String::from(s)).collect();
+            let substack: Vec<String> = data_vec[1].trim_matches(pattern).split(' ').map(|s| String::from(s)).collect();
+            let msgstack: Vec<String> = data_vec[2].trim_matches(pattern).split(' ').map(|s| String::from(s)).collect();
             return Some(PubSubInstance::new(publisher, Some(msgstack), Some(substack)));
         }
         None
+    }
+
+    // TESTING: subcribe from oth node
+    pub fn subscribe_network(&self, topic: String, bootnode: AppNode) -> bool {
+        let pubsub = self.kademlia.query_value(bootnode.node, topic.clone());
+
+        if let Some(pubsub) = pubsub {
+            if let QueryValueResult::Value(pubsub_str) = pubsub {
+                let pubsub_ins = self.get_pubsub_instance(pubsub_str).unwrap();
+                pubsub_ins.add_sub(self.node.get_addr());
+                self.kademlia.insert(topic.clone(), pubsub_ins.to_string());
+                println!("\t[AN{}]: subscribed to topic: {}", self.node.port, topic);
+                return true
+            }
+            println!("\t[AN{}]: Error subscribing to topic: {}", self.node.port, topic)
+        }
+        println!("\t[AN{}]: Error subscribing to topic: {}", self.node.port, topic);
+        false
     }
 }
 

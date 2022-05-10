@@ -32,11 +32,14 @@ mod tests {
     use super::kademlia::{KademliaInstance, RoutingTable, Bucket};
     use super::blockchain::{Block};
     use super::bootstrap::{Bootstrap, AppNode};
+    use super::pubsub::{PubSubInstance};
     use super::aux;
     use super::{N_KBUCKETS, KEY_LEN};
     use log::{info};
     use std::time::Duration;
     use std::thread::{sleep};
+
+    use base64::{decode};
 
     #[test]
     fn node_with_dist_test() {
@@ -361,11 +364,11 @@ mod tests {
         println!("BootNode2 GET: {:?}", get_bootnode);
         println!("BootNode2 Subscribe test: ");
         boot.nodes[2].subscribe(String::from("test"));
-        let get_bootnode2 = boot.nodes[2].kademlia.get(String::from("test"));
-        println!("BootNode2 GET: {:?}", get_bootnode2);
+        let get_bootnode2 = boot.nodes[2].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode2 GET: {:?}", decode_data(get_bootnode2));
 
-        let get_bootnode1 = boot.nodes[1].kademlia.get(String::from("test"));
-        println!("BootNode1 GET: {:?}", get_bootnode1);
+        let get_bootnode1 = boot.nodes[1].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode1 GET: {:?}", decode_data(get_bootnode1));
         println!("BootNode1 Subscribe test: ");
         boot.nodes[1].subscribe(String::from("test"));
 
@@ -375,16 +378,21 @@ mod tests {
 
         let register = appnode.join_network(boot.nodes[0].clone());
         println!("AppNode register: {}", register);
-        let get_appnode = appnode.kademlia.get(String::from("test"));
-        println!("AppNode GET: {:?}", get_appnode);
+        let get_appnode = appnode.kademlia.get(String::from("test")).unwrap();
+        println!("AppNode GET: {:?}", decode_data(get_appnode));
 
         println!("AppNode Subscribe test: ");
         appnode.subscribe(String::from("test"));
 
         // let subscribe = appnode.subscribe_network(String::from("test"), boot.nodes[3].clone());
         // println!("AppNode Subscribe Network test: {}", subscribe);
-        let get_appnode = appnode.kademlia.get(String::from("test"));
-        println!("AppNode GET: {:?}", get_appnode);
+        let get_appnode = appnode.kademlia.get(String::from("test")).unwrap();
+        println!("AppNode GET: {:?}", decode_data(get_appnode));
+
+        let addmsg_appnode = appnode.add_msg(String::from("test"), String::from("testmsg"));
+        println!("AppNode SendMsg test: {}", addmsg_appnode);
+        let get_appnode = appnode.kademlia.get(String::from("test")).unwrap();
+        println!("AppNode GET: {:?}", decode_data(get_appnode));
 
         // println!();
         // println!();
@@ -399,5 +407,21 @@ mod tests {
         // println!("BootNode3 GET: {:?}", get_bootnode3);
     }
 
+    #[test]
+    fn temp_test() {
+        let pubsub = PubSubInstance::new(String::from("test"), None, None);
+        pubsub.add_msg(String::from("testmsg"));
+        pubsub.add_sub(String::from("testsub"));
+
+        println!("{}", pubsub);
+
+        let decoded_data = decode_data(pubsub.to_string());
+        println!("{:?}", decoded_data);
+    }
+
     // TODO: Add PubSub AddMsgs
+    fn decode_data(data: String) -> String {
+        String::from_utf8(decode(data.to_string()).expect("Error decoding data"))
+                .expect("Error converting data to string")
+    }
 }
