@@ -74,9 +74,6 @@ impl PubSubInstance {
     fn verify_subs(&self, addr: String) -> bool {
         let substack = self.substack.lock()
             .expect("Error setting lock in substack");
-        
-        // println!("SUBSTACK: {:?}", substack);
-        // println!("ADDR: {:?}", addr);
 
         if substack.contains(&addr) {
             drop(substack);
@@ -114,6 +111,7 @@ impl PubSubInstance {
             .expect("Error setting lock in msg stack");
         let substack_clone = substack.clone();
         drop(substack);
+
         let substack_len = substack_clone.len();
         let mut iter = 0;
         for sub in substack_clone {
@@ -125,6 +123,7 @@ impl PubSubInstance {
             substack_str.push_str(&full);
             iter += 1
         }
+
         format!("{}", substack_str)
     }
 

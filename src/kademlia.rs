@@ -273,7 +273,7 @@ impl KademliaInstance {
     pub fn insert(&self, keystr: String, value: String) {
         let nodes = self.find_node(&Key::new(keystr.clone()));
 
-        if nodes.is_empty() {            
+        if nodes.is_empty() {
             let mut hashmap = self.hashmap.lock()
                 .expect("");
             hashmap.insert(keystr, value);
@@ -540,6 +540,7 @@ impl KademliaInstance {
             routingtable.update_routing_table(qynode);
         } else {
             // TODO: error logs
+            println!("ERROR")
         }
     }
 

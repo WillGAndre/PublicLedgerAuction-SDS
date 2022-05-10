@@ -203,7 +203,10 @@ pub struct AppNode {
     pub subs: Vec<PubSubInstance>
 }
 
-//NOTE: blockchain should be queried before any action 
+// NOTE: blockchain should be queried before any action
+/*
+    TODO: Change publish/subscribe/add_msg to blockchain
+*/
 impl AppNode {
     pub fn new(addr: String, port: u16, bootstrap: Option<Node>) -> Self {
         let node = Node::new(addr.clone(), port.clone());

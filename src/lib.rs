@@ -358,17 +358,25 @@ mod tests {
     fn pubsub_subscribe_test() {
         let boot = Bootstrap::new();
         println!();
+
+        // PUBLISH
         println!("BootNode0 published test");
         boot.nodes[0].publish(String::from("test"));
+        
         let get_bootnode = boot.nodes[2].kademlia.get(String::from("test"));
         println!("BootNode2 GET: {:?}", get_bootnode);
+        
+        // SUBSCRIBE 1
         println!("BootNode2 Subscribe test: ");
         boot.nodes[2].subscribe(String::from("test"));
+        
         let get_bootnode2 = boot.nodes[2].kademlia.get(String::from("test")).unwrap();
         println!("BootNode2 GET: {:?}", decode_data(get_bootnode2));
 
         let get_bootnode1 = boot.nodes[1].kademlia.get(String::from("test")).unwrap();
         println!("BootNode1 GET: {:?}", decode_data(get_bootnode1));
+        
+        // SUBSCRIBE 2
         println!("BootNode1 Subscribe test: ");
         boot.nodes[1].subscribe(String::from("test"));
 
@@ -386,6 +394,7 @@ mod tests {
 
         // let subscribe = appnode.subscribe_network(String::from("test"), boot.nodes[3].clone());
         // println!("AppNode Subscribe Network test: {}", subscribe);
+        
         let get_appnode = appnode.kademlia.get(String::from("test")).unwrap();
         println!("AppNode GET: {:?}", decode_data(get_appnode));
 
@@ -394,17 +403,18 @@ mod tests {
         let get_appnode = appnode.kademlia.get(String::from("test")).unwrap();
         println!("AppNode GET: {:?}", decode_data(get_appnode));
 
-        // println!();
-        // println!();
-        // // prints ---
-        // let get_bootnode0 = boot.nodes[0].kademlia.get(String::from("test"));
-        // println!("BootNode0 GET: {:?}", get_bootnode0);
-        // let get_bootnode1 = boot.nodes[1].kademlia.get(String::from("test"));
-        // println!("BootNode1 GET: {:?}", get_bootnode1);
-        // let get_bootnode2 = boot.nodes[2].kademlia.get(String::from("test"));
-        // println!("BootNode2 GET: {:?}", get_bootnode2);
-        // let get_bootnode3 = boot.nodes[3].kademlia.get(String::from("test"));
-        // println!("BootNode3 GET: {:?}", get_bootnode3);
+
+        println!();
+        println!();
+        // prints ---
+        let get_bootnode0 = boot.nodes[0].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode0 GET: {:?}", decode_data(get_bootnode0));
+        let get_bootnode1 = boot.nodes[1].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode1 GET: {:?}", decode_data(get_bootnode1));
+        let get_bootnode2 = boot.nodes[2].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode2 GET: {:?}", decode_data(get_bootnode2));
+        let get_bootnode3 = boot.nodes[3].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode3 GET: {:?}", decode_data(get_bootnode3));
     }
 
     #[test]
