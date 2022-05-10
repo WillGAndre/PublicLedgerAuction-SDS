@@ -205,7 +205,9 @@ pub struct AppNode {
 
 // NOTE: blockchain should be queried before any action
 /*
-    TODO: Change publish/subscribe/add_msg to blockchain
+    TODO: 
+        - Change publish/subscribe/add_msg to blockchain
+        - Fix pubsub_subscribe_test
 */
 impl AppNode {
     pub fn new(addr: String, port: u16, bootstrap: Option<Node>) -> Self {
