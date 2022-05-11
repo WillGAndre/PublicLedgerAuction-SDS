@@ -105,7 +105,7 @@ impl PubSubInstance {
         format!("{}", msgstack_str)
     }
 
-    fn print_substack(&self) -> String {
+    pub fn print_substack(&self) -> String {
         let mut substack_str = String::new();
         let substack = self.substack.lock()
             .expect("Error setting lock in msg stack");

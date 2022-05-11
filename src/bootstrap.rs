@@ -1,7 +1,7 @@
 use super::kademlia::{KademliaInstance};
 use super::blockchain::Block;
 use super::pubsub::PubSubInstance;
-use super::node::{Node};
+use super::node::{Node, NodeWithDistance};
 use super::aux::get_ip;
 use super::rpc::{full_rpc_proc, KademliaRequest, KademliaResponse, QueryValueResult};
 
@@ -227,7 +227,7 @@ impl AppNode {
     }
 
     pub fn subscribe(&self, topic: String) -> bool {
-        let pubsub = self.kademlia.get(topic.clone());
+        let pubsub = self.get_from_hashmap(topic.clone());
         if pubsub == None {
             println!("\t[AN{}]: Error subscribing - couldn't find topic: {}", self.node.port, topic)
         } else {
@@ -243,7 +243,7 @@ impl AppNode {
     }
 
     pub fn add_msg(&self, topic: String, msg: String) -> bool {
-        let pubsub = self.kademlia.get(topic.clone());
+        let pubsub = self.get_from_hashmap(topic.clone());
         if pubsub == None {
             println!("\t[AN{}]: Error adding msg - couldn't find topic: {}", self.node.port, topic)
         } else {
@@ -258,6 +258,94 @@ impl AppNode {
         }
         
         false
+    }
+
+    pub fn get_from_hashmap(&self, topic: String) -> Option<String> {
+        let local_pubsub = self.kademlia.get(topic.clone());
+        let (_, global_pubsub) = self.verify_pubsub_instance(topic);
+        
+        if global_pubsub != None && local_pubsub != global_pubsub {
+            return global_pubsub
+        }
+
+        local_pubsub
+    }
+
+    /*
+        Query publisher/subs for pubsub sequence, returns largest.
+        If no value is returned from publisher/subs, closest nodes
+        to key are queried.
+
+        TODO/Notice:
+            -  Returned nodes may include "self" node
+            -  Addresses could/should be queried as a stack,
+               this way we can perform multiple queries instead of
+               a double query.
+    */
+    pub fn verify_pubsub_instance(&self, topic: String) -> (bool, Option<String>) {
+        let pubsub = self.kademlia.get(topic.clone());
+
+        if pubsub != None {
+            let mut largest_value = String::from("");
+            let pubsub_str = pubsub.unwrap();
+            let pubsub_ins = self.get_pubsub_instance(pubsub_str.clone()).unwrap();
+            let publisher: Vec<&str> = pubsub_ins.publisher.split(':').collect();
+            let substack: String = pubsub_ins.print_substack();
+            let subs: Vec<&str> = substack.split(' ').collect();
+
+            let get_value = self.kademlia.query_value(Node::new(publisher[0].to_string(), publisher[1].to_string().parse::<u16>().unwrap()), topic.clone());
+
+            if let Some(query_value) = get_value {
+                if let QueryValueResult::Value(value_str) = query_value {
+                    if value_str.len() > largest_value.len() {
+                        largest_value = value_str;
+                    }
+                } else if let QueryValueResult::Nodes(nodeswithdist) = query_value {
+                    for NodeWithDistance(node, _) in nodeswithdist {
+                        let get_value = self.kademlia.query_value(node, topic.clone());
+                        if let Some(query_value) = get_value {
+                            if let QueryValueResult::Value(value_str) = query_value {
+                                if value_str.len() > largest_value.len() {
+                                    largest_value = value_str;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            for sub in subs {
+                if sub != "" {
+                    let sub_addr: Vec<&str> = sub.split(':').collect();
+                    let get_value = self.kademlia.query_value(Node::new(sub_addr[0].to_string(), sub_addr[1].to_string().parse::<u16>().unwrap()), topic.clone());
+
+                    if let Some(query_value) = get_value {
+                        if let QueryValueResult::Value(value_str) = query_value {
+                            if value_str.len() > largest_value.len() {
+                                largest_value = value_str;
+                            }
+                        } else if let QueryValueResult::Nodes(nodeswithdist) = query_value {
+                            for NodeWithDistance(node, _) in nodeswithdist {
+                                let get_value = self.kademlia.query_value(node, topic.clone());
+                                if let Some(query_value) = get_value {
+                                    if let QueryValueResult::Value(value_str) = query_value {
+                                        if value_str.len() > largest_value.len() {
+                                            largest_value = value_str;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } 
+                }
+            }
+
+            if largest_value.len() > pubsub_str.len() {
+                return (false, Some(largest_value))
+            }
+        }
+
+        (true, None)
     }
 
     // register method - arg: AppNode

@@ -280,6 +280,37 @@ impl KademliaInstance {
 
             // println!("\t[AN{}]: Added to self DHT", self.node.port)
         } else {
+            // let mut nodes_list: Vec<(Node, String)> = Vec::new();
+            // for NodeWithDistance(node, _) in nodes.clone() {
+            //     let kad = self.clone();
+            //     let keystr = keystr.clone();
+            //     let get_value = kad.query_value(node.clone(), keystr);
+
+            //     if let Some(query_value) = get_value {
+            //         if let QueryValueResult::Value(value_str) = query_value {
+            //             nodes_list.push((node, value_str))
+            //         }
+            //     }
+            // }
+
+            // if !nodes_list.is_empty() {
+            //     nodes_list.sort_by(|nv1, nv2| nv1.1.len().cmp(&nv2.1.len()));
+
+            //     for (node, _) in nodes_list {
+            //         let kad = self.clone();
+            //         let keystr = keystr.clone();
+            //         let value = value.clone();
+            //         kad.store_value(node, keystr, value);
+            //     }
+            // } else {
+            //     for NodeWithDistance(node, _) in nodes {
+            //         let kad = self.clone();
+            //         let keystr = keystr.clone();
+            //         let value = value.clone();
+            //         kad.store_value(node, keystr, value);
+            //     }
+            // }
+
             for NodeWithDistance(node, _) in nodes {
                 let kad = self.clone();
                 let keystr = keystr.clone();
