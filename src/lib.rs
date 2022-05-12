@@ -417,6 +417,7 @@ mod tests {
         println!("BootNode3 GET: {:?}", decode_data(get_bootnode3));
     }
 
+    // TODO
     #[test]
     fn pubsub_addmsg_test() {
         let boot = Bootstrap::new();
