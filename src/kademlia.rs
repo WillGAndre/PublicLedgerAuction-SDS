@@ -367,12 +367,8 @@ impl KademliaInstance {
             .expect("Error setting lock in routing table");
 
         let mut history = HashSet::new();
-        let mut nodes = BinaryHeap::from(routingtable.get_bucket_nodes(id));
         
-        if nodes.is_empty() {
-            nodes = BinaryHeap::from(routingtable.get_closest_nodes(id));
-        }
-        drop(routingtable);
+        let mut nodes = self.build_heap(id, routingtable);
 
         for entry in &nodes {
             history.insert(entry.clone());
@@ -505,6 +501,44 @@ impl KademliaInstance {
 
         res.truncate(K_PARAM);
         (None, res)
+    }
+
+
+    // NOTICE/TODO: ATM HEAP MAY INCLUDE MULTIPLE COPIES OF NODES
+    // FUNCTION SHOULD BE TWEAKED IN CASE NOT ENOUGH NODES AREN'T
+    // BEING RETURNED FROM find_node/find_value (inconsistencies 
+    // in pubsub hashmap insert).
+    fn build_heap(&self, key: &Key, routingtable: std::sync::MutexGuard<RoutingTable>) -> BinaryHeap<NodeWithDistance> {
+        let mut nodes = BinaryHeap::from(routingtable.get_bucket_nodes(key));
+
+        let mut cycle = 0;
+        while nodes.len() < ALPHA {
+            let mut candidate_nodes: Vec<NodeWithDistance> = Vec::new();
+            if cycle == 0 {
+                candidate_nodes = routingtable.get_closest_nodes(key);
+                cycle = 1;
+            } else if cycle == 1 {
+                candidate_nodes = routingtable.get_all_nodes(key);
+                cycle = 2;
+            } else {
+                nodes.extend(candidate_nodes);
+                break
+            }
+            let candidate_nodes_len = candidate_nodes.len();
+            let range = ALPHA - nodes.len();
+            let res: Vec<NodeWithDistance>;
+
+            if range <= candidate_nodes_len {
+                res = candidate_nodes.drain(0..range).collect();
+            } else {
+                res = candidate_nodes.drain(0..candidate_nodes_len).collect();
+            }
+
+            nodes.extend(res)
+        }
+
+        drop(routingtable);
+        nodes
     }
 
     /**

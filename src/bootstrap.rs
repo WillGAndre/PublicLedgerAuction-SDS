@@ -199,8 +199,7 @@ impl Bootstrap {
 pub struct AppNode {
     pub node: Node,
     pub kademlia: KademliaInstance,
-    pub pubsub: PubSubInstance,
-    pub subs: Vec<PubSubInstance>
+    pub pubsub: PubSubInstance
 }
 
 // NOTE: blockchain should be queried before any action
@@ -215,8 +214,7 @@ impl AppNode {
         Self {
             node: node.clone(),
             kademlia: KademliaInstance::new(addr, port, bootstrap),
-            pubsub: PubSubInstance::new(node.get_addr(), None, None),
-            subs: Vec::new(),
+            pubsub: PubSubInstance::new(node.get_addr(), None, None)
         }
     }
 
@@ -227,7 +225,7 @@ impl AppNode {
     }
 
     pub fn subscribe(&self, topic: String) -> bool {
-        let pubsub = self.get_from_hashmap(topic.clone());
+        let pubsub = self.kademlia.get(topic.clone());
         if pubsub == None {
             println!("\t[AN{}]: Error subscribing - couldn't find topic: {}", self.node.port, topic)
         } else {
@@ -243,7 +241,7 @@ impl AppNode {
     }
 
     pub fn add_msg(&self, topic: String, msg: String) -> bool {
-        let pubsub = self.get_from_hashmap(topic.clone());
+        let pubsub = self.kademlia.get(topic.clone());
         if pubsub == None {
             println!("\t[AN{}]: Error adding msg - couldn't find topic: {}", self.node.port, topic)
         } else {
@@ -259,18 +257,7 @@ impl AppNode {
         
         false
     }
-
-    pub fn get_from_hashmap(&self, topic: String) -> Option<String> {
-        let local_pubsub = self.kademlia.get(topic.clone());
-        let (_, global_pubsub) = self.verify_pubsub_instance(topic);
-        
-        if global_pubsub != None && local_pubsub != global_pubsub {
-            return global_pubsub
-        }
-
-        local_pubsub
-    }
-
+    
     /*
         Query publisher/subs for pubsub sequence, returns largest.
         If no value is returned from publisher/subs, closest nodes
