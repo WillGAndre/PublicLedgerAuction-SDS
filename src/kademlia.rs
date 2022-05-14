@@ -430,15 +430,8 @@ impl KademliaInstance {
         let routingtable = self.routingtable.lock()
             .expect("Error setting lock in routing table");
         let mut history = HashSet::new();
-        let mut nodes = BinaryHeap::from(routingtable.get_bucket_nodes(&key));
-        
-        if nodes.is_empty() {
-            nodes = BinaryHeap::from(routingtable.get_closest_nodes(&key));
-            if nodes.is_empty() {
-                nodes = BinaryHeap::from(routingtable.get_all_nodes(&key));
-            }
-        }
-        drop(routingtable);
+
+        let mut nodes = self.build_heap(&key, routingtable);
 
         for entry in &nodes {
             history.insert(entry.clone());
@@ -474,6 +467,7 @@ impl KademliaInstance {
                 );
             }
 
+            let mut value_res = String::from("");
             for (result, qynode) in results.into_iter().zip(qynodes) {
                 if let Some(value) = result {
                     match value {
@@ -489,13 +483,22 @@ impl KademliaInstance {
                             }
                         },
                         QueryValueResult::Value(value) => {
-                            res.sort_by(|a,b| a.1.cmp(&b.1));
-                            res.truncate(K_PARAM);
+                            if value.len() > value_res.len() {
+                                value_res = value
+                            }
+                            // res.sort_by(|a,b| a.1.cmp(&b.1));
+                            // res.truncate(K_PARAM);
 
-                            return (Some(value), res)
+                            // return (Some(value), res)
                         }
                     }
                 }
+            }
+            if value_res != "" {
+                res.sort_by(|a,b| a.1.cmp(&b.1));
+                res.truncate(K_PARAM);
+
+                return (Some(value_res), res)
             }
         }
 
@@ -521,9 +524,10 @@ impl KademliaInstance {
                 candidate_nodes = routingtable.get_all_nodes(key);
                 cycle = 2;
             } else {
-                nodes.extend(candidate_nodes);
+                nodes.extend(candidate_nodes); // TODO: REMOVE
                 break
             }
+
             let candidate_nodes_len = candidate_nodes.len();
             let range = ALPHA - nodes.len();
             let res: Vec<NodeWithDistance>;

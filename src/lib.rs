@@ -417,7 +417,6 @@ mod tests {
         println!("BootNode3 GET: {:?}", decode_data(get_bootnode3));
     }
 
-    // TODO
     #[test]
     fn pubsub_addmsg_test() {
         let boot = Bootstrap::new();
@@ -433,9 +432,10 @@ mod tests {
         let register1 = appnode1.join_network(boot.nodes[1].clone());
         println!("AppNode register: {}", register1);
 
-        let register2 = appnode1.join_network(boot.nodes[2].clone());
+        let register2 = appnode2.join_network(boot.nodes[2].clone());
         println!("AppNode register: {}", register2);
 
+        // TODO: Add msgs
 
         println!();
         println!();
@@ -448,6 +448,13 @@ mod tests {
         println!("BootNode2 GET: {:?}", decode_data(get_bootnode2));
         let get_bootnode3 = boot.nodes[3].kademlia.get(String::from("test")).unwrap();
         println!("BootNode3 GET: {:?}", decode_data(get_bootnode3));
+
+        let get_appnode0 = appnode0.kademlia.get(String::from("test")).unwrap();
+        println!("AppNode0 GET: {:?}", decode_data(get_appnode0));
+        let get_appnode1 = appnode1.kademlia.get(String::from("test")).unwrap();
+        println!("AppNode1 GET: {:?}", decode_data(get_appnode1));
+        let get_appnode2 = appnode2.kademlia.get(String::from("test")).unwrap();
+        println!("AppNode0 GET: {:?}", decode_data(get_appnode2));
     }
 
     fn decode_data(data: String) -> String {

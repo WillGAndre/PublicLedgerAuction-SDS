@@ -222,6 +222,7 @@ impl AppNode {
         self.kademlia.insert(topic.clone(), self.pubsub.to_string());
         println!("\t[AN{}]: published topic: {}", self.node.port, topic)
         // TODO: Call pubsub msg loop
+        // TODO: Maybe add block when publish is trigered
     }
 
     pub fn subscribe(&self, topic: String) -> bool {

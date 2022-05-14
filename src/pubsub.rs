@@ -34,11 +34,6 @@ impl PubSubInstance {
         }
     }
 
-    // TODO
-    // pub fn relay_msgstack(pubsub: PubSubInstance) {
-        
-    // }
-
     // TODO: loop -> Relay msgs using substack (called when publish is performed)
     /*
         2 threads:
