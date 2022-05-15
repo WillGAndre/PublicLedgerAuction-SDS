@@ -435,7 +435,19 @@ mod tests {
         let register2 = appnode2.join_network(boot.nodes[2].clone());
         println!("AppNode register: {}", register2);
 
-        // TODO: Add msgs
+        println!("AppNode1 publish: test + subscribe from AppNode0 and AppNode2");
+        appnode1.publish(String::from("test"));
+        appnode0.subscribe(String::from("test"));
+        appnode2.subscribe(String::from("test"));
+
+        let addmsg_appnode0 = appnode0.add_msg(String::from("test"), String::from("testmsg:APPNODE0"));
+        println!("AppNode SendMsg test: {}", addmsg_appnode0);
+
+        let addmsg_appnode1 = appnode1.add_msg(String::from("test"), String::from("testmsg:APPNODE1"));
+        println!("AppNode SendMsg test: {}", addmsg_appnode1);
+
+        let addmsg_appnode2 = appnode2.add_msg(String::from("test"), String::from("testmsg:APPNODE2"));
+        println!("AppNode SendMsg test: {}", addmsg_appnode2);
 
         println!();
         println!();
@@ -455,6 +467,21 @@ mod tests {
         println!("AppNode1 GET: {:?}", decode_data(get_appnode1));
         let get_appnode2 = appnode2.kademlia.get(String::from("test")).unwrap();
         println!("AppNode0 GET: {:?}", decode_data(get_appnode2));
+
+        println!();
+        println!("AppNode0 BK:");
+        appnode0.kademlia.print_blockchain();
+        println!("AppNode1 BK:");
+        appnode1.kademlia.print_blockchain();
+        println!("AppNode2 BK:");
+        appnode2.kademlia.print_blockchain();
+        println!();
+        println!("AppNode0 HMP:");
+        println!("{}", appnode0.kademlia.print_hashmap());
+        println!("AppNode1 HMP:");
+        println!("{}", appnode1.kademlia.print_hashmap());
+        println!("AppNode2 HMP:");
+        println!("{}", appnode2.kademlia.print_hashmap());
     }
 
     fn decode_data(data: String) -> String {

@@ -486,20 +486,24 @@ impl KademliaInstance {
                             if value.len() > value_res.len() {
                                 value_res = value
                             }
+                            // ---
                             // res.sort_by(|a,b| a.1.cmp(&b.1));
                             // res.truncate(K_PARAM);
 
                             // return (Some(value), res)
+                            // ---
                         }
                     }
                 }
             }
+            // ---
             if value_res != "" {
                 res.sort_by(|a,b| a.1.cmp(&b.1));
                 res.truncate(K_PARAM);
 
                 return (Some(value_res), res)
             }
+            // ---
         }
 
         res.truncate(K_PARAM);
@@ -738,7 +742,7 @@ impl KademliaInstance {
 
     pub fn print_routing_table(&self) {
         let routingtable = self.routingtable.lock()
-            .expect("Error setting lock in routing table");
+            .expect("Error setting lock in routing table"); // TODO: drop
         println!("{:?}", routingtable);
     }
 
@@ -752,7 +756,7 @@ impl KademliaInstance {
 
     pub fn print_blockchain(&self) {
         let blockchain = self.blockchain.lock()
-            .expect("Error setting lock in local blockchain");
+            .expect("Error setting lock in local blockchain"); // TODO: drop
         println!("{:?}", blockchain)
     }
 }
