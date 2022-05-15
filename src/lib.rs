@@ -4,6 +4,7 @@ pub mod rpc;
 pub mod kademlia;
 pub mod blockchain;
 pub mod bootstrap;
+pub mod pubsub;
 
 /**
  * BASED ON: KademliaBriefOverview.pdf 
@@ -31,11 +32,14 @@ mod tests {
     use super::kademlia::{KademliaInstance, RoutingTable, Bucket};
     use super::blockchain::{Block};
     use super::bootstrap::{Bootstrap, AppNode};
+    use super::pubsub::{PubSubInstance};
     use super::aux;
     use super::{N_KBUCKETS, KEY_LEN};
     use log::{info};
     use std::time::Duration;
     use std::thread::{sleep};
+
+    use base64::{decode};
 
     #[test]
     fn node_with_dist_test() {
@@ -305,38 +309,183 @@ mod tests {
         // boot.nodes[2].kademlia.print_blockchain();
     }
 
-    // #[test]
-    // fn fullscale_test() {
-    //     let boot = Bootstrap::new();node: Nodes[0].node.addr.clone(), boot.routnodes[0].node.port);
-    //     let ln1 = LightNode::new(aux::get_ip().unwrap(), 1355, None);
-    //     let ln2 = LightNode::new(aux::get_ip().unwrap(), 1356, None);
+    #[test]
+    fn pubsub_test() {
+        let boot = Bootstrap::new();
+        let appnode = AppNode::new(aux::get_ip().unwrap(), 1335, None);
 
-    //     let ln1_register = ln1.join_network(entry_node.clone());
-    //     println!("LN1 Register: {}", ln1_register);
+        println!();
 
-    //     let ln2_register = ln2.join_network(entry_node);
-    //     println!("LN2 Register: {}", ln2_register);
+        let register = appnode.join_network(boot.nodes[0].clone());
+        println!("AppNode register: {}", register);
 
-    //     boot.authnodes[0].add_block(Block::new(1, "0000f816a87f806bb0073dcf026a64fb40c946b5abee2573702828694d5b4c43".to_string(), "test0".to_string()));
-    //     boot.authnodes[1].add_block(Block::new(1, "0000f816a87f806bb0073dcf026a64fb40c946b5abee2573702828694d5b4c43".to_string(), "test1".to_string()));
+        println!();
+        println!("BootNode0 published test");
+        boot.nodes[0].publish(String::from("test"));
 
-    //     println!("wait: 20s");
-    //     sleep(Duration::from_secs(20));
-    //     println!("1st RoutingNode");
-    //     boot.routnodes[0].kademlia.print_routing_table();
-    //     println!("2nd RoutingNode");
-    //     boot.routnodes[1].kademlia.print_routing_table();
-    //     println!("1st AuthNode:");
-    //     boot.authnodes[0].kademlia.print_blockchain();
-    //     println!("2nd AuthNode:");
-    //     boot.authnodes[1].kademlia.print_blockchain();
+        // NOTE: Without gets only BootNode3 would have this topic.
+        // Because BootNode2 can find the topic, he adds the info to the
+        // first intermediate node (from the get search) (H1) or to all 
+        // intermediate nodes (H2).
+        //
+        // FOR MORE INFO: Check else statement in get (kademlia)
+        // 
+        // AppNode get fails since he has no one near the key ("test"),
+        // the node near is BootNode3 but he doesnt have him in his routingtable.
+        let get_appnode = appnode.kademlia.get(String::from("test"));
+        println!("AppNode GET: {:?}", get_appnode);
+        let get_bootnode = boot.nodes[2].kademlia.get(String::from("test"));
+        println!("BootNode2 GET: {:?}", get_bootnode);
 
-    //     println!();
-    //     println!("wait: 20s");
-    //     sleep(Duration::from_secs(20));
-    //     println!("1st AuthNode:");
-    //     boot.authnodes[0].kademlia.print_blockchain();
-    //     println!("2nd AuthNode:");
-    //     boot.authnodes[1].kademlia.print_blockchain();
-    // }
+        let query_value = appnode.kademlia.query_value(boot.nodes[0].node.clone(), String::from("test"));
+        println!("AppNode QUERY topic to BootNode0: {:?}", query_value);
+
+        println!();
+        println!("---");
+
+        println!("AppNode DHT: {}", appnode.kademlia.print_hashmap());
+        println!(" --- ");
+        println!("BootNode0 DHT: {}", boot.nodes[0].kademlia.print_hashmap());
+        println!(" --- ");
+        println!("BootNode1 DHT: {}", boot.nodes[1].kademlia.print_hashmap());
+        println!(" --- ");
+        println!("BootNode2 DHT: {}", boot.nodes[2].kademlia.print_hashmap());
+        println!(" --- ");
+        println!("BootNode3 DHT: {}", boot.nodes[3].kademlia.print_hashmap());
+    }
+
+    #[test]
+    fn pubsub_subscribe_test() {
+        let boot = Bootstrap::new();
+        println!();
+
+        // PUBLISH
+        println!("BootNode0 published test");
+        boot.nodes[0].publish(String::from("test"));
+        
+        let get_bootnode = boot.nodes[2].kademlia.get(String::from("test"));
+        println!("BootNode2 GET: {:?}", get_bootnode);
+        
+        // SUBSCRIBE 1
+        println!("BootNode2 Subscribe test: ");
+        boot.nodes[2].subscribe(String::from("test"));
+        
+        let get_bootnode2 = boot.nodes[2].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode2 GET: {:?}", decode_data(get_bootnode2));
+
+        let get_bootnode1 = boot.nodes[1].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode1 GET: {:?}", decode_data(get_bootnode1));
+        
+        // SUBSCRIBE 2
+        println!("BootNode1 Subscribe test: ");
+        boot.nodes[1].subscribe(String::from("test"));
+
+        let appnode = AppNode::new(aux::get_ip().unwrap(), 1335, None);
+
+        println!();
+
+        let register = appnode.join_network(boot.nodes[0].clone());
+        println!("AppNode register: {}", register);
+        let get_appnode = appnode.kademlia.get(String::from("test")).unwrap();
+        println!("AppNode GET: {:?}", decode_data(get_appnode));
+
+        println!("AppNode Subscribe test: ");
+        appnode.subscribe(String::from("test"));
+
+        // let subscribe = appnode.subscribe_network(String::from("test"), boot.nodes[3].clone());
+        // println!("AppNode Subscribe Network test: {}", subscribe);
+        
+        let get_appnode = appnode.kademlia.get(String::from("test")).unwrap();
+        println!("AppNode GET: {:?}", decode_data(get_appnode));
+
+        let addmsg_appnode = appnode.add_msg(String::from("test"), String::from("testmsg"));
+        println!("AppNode SendMsg test: {}", addmsg_appnode);
+        let get_appnode = appnode.kademlia.get(String::from("test")).unwrap();
+        println!("AppNode GET: {:?}", decode_data(get_appnode));
+
+
+        println!();
+        println!();
+        // prints ---
+        let get_bootnode0 = boot.nodes[0].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode0 GET: {:?}", decode_data(get_bootnode0));
+        let get_bootnode1 = boot.nodes[1].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode1 GET: {:?}", decode_data(get_bootnode1));
+        let get_bootnode2 = boot.nodes[2].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode2 GET: {:?}", decode_data(get_bootnode2));
+        let get_bootnode3 = boot.nodes[3].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode3 GET: {:?}", decode_data(get_bootnode3));
+    }
+
+    #[test]
+    fn pubsub_addmsg_test() {
+        let boot = Bootstrap::new();
+        println!();
+
+        let appnode0 = AppNode::new(aux::get_ip().unwrap(), 1335, None);
+        let appnode1 = AppNode::new(aux::get_ip().unwrap(), 1336, None);
+        let appnode2 = AppNode::new(aux::get_ip().unwrap(), 1337, None);
+
+        let register0 = appnode0.join_network(boot.nodes[0].clone());
+        println!("AppNode register: {}", register0);
+
+        let register1 = appnode1.join_network(boot.nodes[1].clone());
+        println!("AppNode register: {}", register1);
+
+        let register2 = appnode2.join_network(boot.nodes[2].clone());
+        println!("AppNode register: {}", register2);
+
+        println!("AppNode1 publish: test + subscribe from AppNode0 and AppNode2");
+        appnode1.publish(String::from("test"));
+        appnode0.subscribe(String::from("test"));
+        appnode2.subscribe(String::from("test"));
+
+        let addmsg_appnode0 = appnode0.add_msg(String::from("test"), String::from("testmsg:APPNODE0"));
+        println!("AppNode SendMsg test: {}", addmsg_appnode0);
+
+        let addmsg_appnode1 = appnode1.add_msg(String::from("test"), String::from("testmsg:APPNODE1"));
+        println!("AppNode SendMsg test: {}", addmsg_appnode1);
+
+        let addmsg_appnode2 = appnode2.add_msg(String::from("test"), String::from("testmsg:APPNODE2"));
+        println!("AppNode SendMsg test: {}", addmsg_appnode2);
+
+        println!();
+        println!();
+        // prints ---
+        let get_bootnode0 = boot.nodes[0].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode0 GET: {:?}", decode_data(get_bootnode0));
+        let get_bootnode1 = boot.nodes[1].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode1 GET: {:?}", decode_data(get_bootnode1));
+        let get_bootnode2 = boot.nodes[2].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode2 GET: {:?}", decode_data(get_bootnode2));
+        let get_bootnode3 = boot.nodes[3].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode3 GET: {:?}", decode_data(get_bootnode3));
+
+        let get_appnode0 = appnode0.kademlia.get(String::from("test")).unwrap();
+        println!("AppNode0 GET: {:?}", decode_data(get_appnode0));
+        let get_appnode1 = appnode1.kademlia.get(String::from("test")).unwrap();
+        println!("AppNode1 GET: {:?}", decode_data(get_appnode1));
+        let get_appnode2 = appnode2.kademlia.get(String::from("test")).unwrap();
+        println!("AppNode0 GET: {:?}", decode_data(get_appnode2));
+
+        println!();
+        println!("AppNode0 BK:");
+        appnode0.kademlia.print_blockchain();
+        println!("AppNode1 BK:");
+        appnode1.kademlia.print_blockchain();
+        println!("AppNode2 BK:");
+        appnode2.kademlia.print_blockchain();
+        println!();
+        println!("AppNode0 HMP:");
+        println!("{}", appnode0.kademlia.print_hashmap());
+        println!("AppNode1 HMP:");
+        println!("{}", appnode1.kademlia.print_hashmap());
+        println!("AppNode2 HMP:");
+        println!("{}", appnode2.kademlia.print_hashmap());
+    }
+
+    fn decode_data(data: String) -> String {
+        String::from_utf8(decode(data.to_string()).expect("Error decoding data"))
+                .expect("Error converting data to string")
+    }
 }

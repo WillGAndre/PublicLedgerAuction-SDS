@@ -127,6 +127,28 @@ impl RoutingTable {
         res
     }
 
+    // Last resort for find_value
+    fn get_all_nodes(&self, key: &Key) -> Vec<NodeWithDistance> {
+        let mut res = Vec::new();
+
+        for index in 1..N_KBUCKETS {
+            for node in &self.kbuckets[index].nodes {
+                if res.len() == K_PARAM {
+                    break;
+                }
+                res.push(
+                    NodeWithDistance(node.clone(), Distance::new(&node.id, key))
+                );
+            }
+            if res.len() == K_PARAM {
+                break;
+            }
+        }
+
+        res.sort_by(|a, b| a.1.cmp(&b.1));
+        res
+    }
+
     // Routing table update function: Updates routing table with new node
     pub fn update_routing_table(&mut self, node: Node) {
         let bucketindex = self.get_bucket_index(&node.id);
@@ -251,17 +273,52 @@ impl KademliaInstance {
     pub fn insert(&self, keystr: String, value: String) {
         let nodes = self.find_node(&Key::new(keystr.clone()));
 
-        if nodes.is_empty() {            
+        if nodes.is_empty() {
             let mut hashmap = self.hashmap.lock()
                 .expect("");
             hashmap.insert(keystr, value);
+
+            // println!("\t[AN{}]: Added to self DHT", self.node.port)
         } else {
+            // let mut nodes_list: Vec<(Node, String)> = Vec::new();
+            // for NodeWithDistance(node, _) in nodes.clone() {
+            //     let kad = self.clone();
+            //     let keystr = keystr.clone();
+            //     let get_value = kad.query_value(node.clone(), keystr);
+
+            //     if let Some(query_value) = get_value {
+            //         if let QueryValueResult::Value(value_str) = query_value {
+            //             nodes_list.push((node, value_str))
+            //         }
+            //     }
+            // }
+
+            // if !nodes_list.is_empty() {
+            //     nodes_list.sort_by(|nv1, nv2| nv1.1.len().cmp(&nv2.1.len()));
+
+            //     for (node, _) in nodes_list {
+            //         let kad = self.clone();
+            //         let keystr = keystr.clone();
+            //         let value = value.clone();
+            //         kad.store_value(node, keystr, value);
+            //     }
+            // } else {
+            //     for NodeWithDistance(node, _) in nodes {
+            //         let kad = self.clone();
+            //         let keystr = keystr.clone();
+            //         let value = value.clone();
+            //         kad.store_value(node, keystr, value);
+            //     }
+            // }
+
             for NodeWithDistance(node, _) in nodes {
                 let kad = self.clone();
                 let keystr = keystr.clone();
                 let value = value.clone();
                 kad.store_value(node, keystr, value);
             }
+
+            // println!("\t[AN{}]: Added to other DHT", self.node.port)
         }
     }
 
@@ -271,14 +328,16 @@ impl KademliaInstance {
         if value == None {
             let hashmap = self.hashmap.lock()
                     .expect("Error setting lock in hashmap");
-            let value = hashmap.get(&key).unwrap();
-            Some(value.to_string())
+            let value = hashmap.get(&key);
+            if value != None {
+                return Some(value.unwrap().to_string())
+            }
+            None
         } else {
             value.map(|val| {
                 if let Some(NodeWithDistance(node, _)) = nodes.pop() {
                     self.store_value(node, key, val.clone());
                 }
-
                 val
             })
         }
@@ -308,12 +367,8 @@ impl KademliaInstance {
             .expect("Error setting lock in routing table");
 
         let mut history = HashSet::new();
-        let mut nodes = BinaryHeap::from(routingtable.get_bucket_nodes(id));
         
-        if nodes.is_empty() {
-            nodes = BinaryHeap::from(routingtable.get_closest_nodes(id));
-        }
-        drop(routingtable);
+        let mut nodes = self.build_heap(id, routingtable);
 
         for entry in &nodes {
             history.insert(entry.clone());
@@ -375,8 +430,8 @@ impl KademliaInstance {
         let routingtable = self.routingtable.lock()
             .expect("Error setting lock in routing table");
         let mut history = HashSet::new();
-        let mut nodes = BinaryHeap::from(routingtable.get_bucket_nodes(&key));
-        drop(routingtable);
+
+        let mut nodes = self.build_heap(&key, routingtable);
 
         for entry in &nodes {
             history.insert(entry.clone());
@@ -412,6 +467,7 @@ impl KademliaInstance {
                 );
             }
 
+            let mut value_res = String::from("");
             for (result, qynode) in results.into_iter().zip(qynodes) {
                 if let Some(value) = result {
                     match value {
@@ -427,18 +483,70 @@ impl KademliaInstance {
                             }
                         },
                         QueryValueResult::Value(value) => {
-                            res.sort_by(|a,b| a.1.cmp(&b.1));
-                            res.truncate(K_PARAM);
+                            if value.len() > value_res.len() {
+                                value_res = value
+                            }
+                            // ---
+                            // res.sort_by(|a,b| a.1.cmp(&b.1));
+                            // res.truncate(K_PARAM);
 
-                            return (Some(value), res)
+                            // return (Some(value), res)
+                            // ---
                         }
                     }
                 }
             }
+            // ---
+            if value_res != "" {
+                res.sort_by(|a,b| a.1.cmp(&b.1));
+                res.truncate(K_PARAM);
+
+                return (Some(value_res), res)
+            }
+            // ---
         }
 
         res.truncate(K_PARAM);
         (None, res)
+    }
+
+
+    // NOTICE/TODO: ATM HEAP MAY INCLUDE MULTIPLE COPIES OF NODES
+    // FUNCTION SHOULD BE TWEAKED IN CASE NOT ENOUGH NODES AREN'T
+    // BEING RETURNED FROM find_node/find_value (inconsistencies 
+    // in pubsub hashmap insert).
+    fn build_heap(&self, key: &Key, routingtable: std::sync::MutexGuard<RoutingTable>) -> BinaryHeap<NodeWithDistance> {
+        let mut nodes = BinaryHeap::from(routingtable.get_bucket_nodes(key));
+
+        let mut cycle = 0;
+        while nodes.len() < ALPHA {
+            let mut candidate_nodes: Vec<NodeWithDistance> = Vec::new();
+            if cycle == 0 {
+                candidate_nodes = routingtable.get_closest_nodes(key);
+                cycle = 1;
+            } else if cycle == 1 {
+                candidate_nodes = routingtable.get_all_nodes(key);
+                cycle = 2;
+            } else {
+                nodes.extend(candidate_nodes); // TODO: REMOVE
+                break
+            }
+
+            let candidate_nodes_len = candidate_nodes.len();
+            let range = ALPHA - nodes.len();
+            let res: Vec<NodeWithDistance>;
+
+            if range <= candidate_nodes_len {
+                res = candidate_nodes.drain(0..range).collect();
+            } else {
+                res = candidate_nodes.drain(0..candidate_nodes_len).collect();
+            }
+
+            nodes.extend(res)
+        }
+
+        drop(routingtable);
+        nodes
     }
 
     /**
@@ -505,6 +613,7 @@ impl KademliaInstance {
             routingtable.update_routing_table(qynode);
         } else {
             // TODO: error logs
+            println!("ERROR")
         }
     }
 
@@ -633,19 +742,21 @@ impl KademliaInstance {
 
     pub fn print_routing_table(&self) {
         let routingtable = self.routingtable.lock()
-            .expect("Error setting lock in routing table");
+            .expect("Error setting lock in routing table"); // TODO: drop
         println!("{:?}", routingtable);
     }
 
-    pub fn print_hashmap(&self) {
+    pub fn print_hashmap(&self) -> String {
         let hashmap = self.hashmap.lock()
             .expect("Error setting lock in hasmap");
-        println!("{:?}", hashmap);
+        let hashmap_clone = hashmap.clone();
+        drop(hashmap);
+        format!("{:?}", hashmap_clone)
     }
 
     pub fn print_blockchain(&self) {
         let blockchain = self.blockchain.lock()
-            .expect("Error setting lock in local blockchain");
+            .expect("Error setting lock in local blockchain"); // TODO: drop
         println!("{:?}", blockchain)
     }
 }
