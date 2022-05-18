@@ -496,12 +496,10 @@ mod tests {
         println!();
 
         let appnode0 = AppNode::new(aux::get_ip().unwrap(), 1335, None);
-        let register0 = appnode0.join_network(boot.nodes[0].clone());
-        println!("AppNode register: {}", register0);
+        let _register0 = appnode0.join_network(boot.nodes[0].clone());
 
         let appnode1 = AppNode::new(aux::get_ip().unwrap(), 1336, None);
-        let register1 = appnode1.join_network(boot.nodes[1].clone());
-        println!("AppNode register: {}", register1);
+        let _register1 = appnode1.join_network(boot.nodes[1].clone());
 
         // sleep(Duration::from_secs(NODETIMEOUT + 1));
 

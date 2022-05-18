@@ -204,7 +204,8 @@ impl AppNode {
 
                     let id = blockchain.blocks[blockchain.blocks.len() - 1].id + 1;
                     let prev_hash = blockchain.blocks[blockchain.blocks.len() - 1].hash.to_string();
-                    let block = Block::new(id, prev_hash, format!("REGISTER: {id}", id=self.node.get_addr()));
+                    let data = format!("REGISTER: {id}", id=self.node.get_addr());
+                    let block = Block::new(id, prev_hash, data.clone());
 
                     blockchain.add_block(block.clone());
                     drop(blockchain);
@@ -212,6 +213,7 @@ impl AppNode {
                     // TODO
                     let add_block = full_rpc_proc(&self.kademlia.rpc, KademliaRequest::AddBlock(block), bootnode.node.clone());
                     if let Some(KademliaResponse::Ping) = add_block {
+                        println!("\t[AN{}]: Added Block info ({})", self.node.port, data.clone());
                         sleep(Duration::from_secs(NODETIMEOUT));
                         return true
                     }
