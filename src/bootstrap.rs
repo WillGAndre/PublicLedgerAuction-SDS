@@ -258,7 +258,7 @@ impl AppNode {
             drop(blockchain);
 
             // ---
-            println!("\t[AN{}]: Updated blockchain ({:?})", self.node.port, remoteblocks)
+            // println!("\t[AN{}]: Updated blockchain ({:?})", self.node.port, remoteblocks)
         }
     }
 

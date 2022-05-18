@@ -37,7 +37,7 @@ mod tests {
     use super::bootstrap::{Bootstrap, AppNode};
     use super::pubsub::{PubSubInstance};
     use super::aux;
-    use super::{N_KBUCKETS, KEY_LEN};
+    use super::{N_KBUCKETS, KEY_LEN, NODETIMEOUT};
     use log::{info};
     use std::time::Duration;
     use std::thread::{sleep};
@@ -503,7 +503,7 @@ mod tests {
         let register1 = appnode1.join_network(boot.nodes[1].clone());
         println!("AppNode register: {}", register1);
 
-        sleep(Duration::from_secs(3));
+        // sleep(Duration::from_secs(NODETIMEOUT + 1));
 
         println!();
         println!("AppNode0 BK:");
