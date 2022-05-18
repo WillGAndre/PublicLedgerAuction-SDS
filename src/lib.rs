@@ -25,6 +25,9 @@ const ALPHA: usize = 3;
 // Timeout for Kademlia replication events
 const TREPLICATE: u64 = 3600; 
 
+// Timeout in secs
+const NODETIMEOUT: u64 = 2;
+
 #[cfg(test)]
 mod tests {
     use super::node::{Node, NodeWithDistance, Distance, Key};
@@ -420,6 +423,7 @@ mod tests {
     #[test]
     fn pubsub_addmsg_test() {
         let boot = Bootstrap::new();
+        // Bootstrap::full_sync(boot.clone());
         println!();
 
         let appnode0 = AppNode::new(aux::get_ip().unwrap(), 1335, None);
@@ -429,10 +433,10 @@ mod tests {
         let register0 = appnode0.join_network(boot.nodes[0].clone());
         println!("AppNode register: {}", register0);
 
-        let register1 = appnode1.join_network(boot.nodes[1].clone());
+        let register1 = appnode1.join_network(boot.nodes[1].clone()); // boot.nodes[1].clone()
         println!("AppNode register: {}", register1);
 
-        let register2 = appnode2.join_network(boot.nodes[2].clone());
+        let register2 = appnode2.join_network(boot.nodes[2].clone()); // boot.nodes[2].clone()
         println!("AppNode register: {}", register2);
 
         println!("AppNode1 publish: test + subscribe from AppNode0 and AppNode2");
@@ -482,6 +486,40 @@ mod tests {
         println!("{}", appnode1.kademlia.print_hashmap());
         println!("AppNode2 HMP:");
         println!("{}", appnode2.kademlia.print_hashmap());
+    }
+
+    // Note: Add timeout before prints, when invoking full_bk_sync
+    #[test]
+    fn simple_sync_test() {
+        let boot = Bootstrap::new();
+        Bootstrap::full_bk_sync(boot.clone());
+        println!();
+
+        let appnode0 = AppNode::new(aux::get_ip().unwrap(), 1335, None);
+        let register0 = appnode0.join_network(boot.nodes[0].clone());
+        println!("AppNode register: {}", register0);
+
+        let appnode1 = AppNode::new(aux::get_ip().unwrap(), 1336, None);
+        let register1 = appnode1.join_network(boot.nodes[1].clone());
+        println!("AppNode register: {}", register1);
+
+        sleep(Duration::from_secs(3));
+
+        println!();
+        println!("AppNode0 BK:");
+        appnode0.kademlia.print_blockchain();
+        println!(" --- ");
+        println!("BootNode0 BK:");
+        boot.nodes[0].kademlia.print_blockchain();
+        println!(" --- ");
+        println!("BootNode1 BK:");
+        boot.nodes[1].kademlia.print_blockchain();
+        println!(" --- ");
+        println!("BootNode2 BK:");
+        boot.nodes[2].kademlia.print_blockchain();
+        println!(" --- ");
+        println!("BootNode3 BK:");
+        boot.nodes[3].kademlia.print_blockchain()
     }
 
     fn decode_data(data: String) -> String {

@@ -1,162 +1,21 @@
 use super::kademlia::{KademliaInstance};
 use super::blockchain::Block;
 use super::pubsub::PubSubInstance;
-use super::node::{Node, NodeWithDistance};
+use super::node::{Node};
 use super::aux::get_ip;
 use super::rpc::{full_rpc_proc, KademliaRequest, KademliaResponse, QueryValueResult};
+use super::NODETIMEOUT;
 
-use std::time::Duration;
 use std::thread::{spawn, sleep};
+use std::time::Duration;
+
+use std::collections::HashSet;
 use base64::decode;
-
-/**
- *  - Add init function as in rpc.rs
- *      where:
- *              blockchain is broadcasted (within AuthNodes)
- *              routing table  || (|| RoutNodes)
- *              masterNode action
-**/
-// impl Bootstrap {
-//     pub fn new() -> Self {
-//         let mut mst = Vec::new();
-//         mst.push(MasterNode::new(get_ip().unwrap(), 1330, None));
-//         let mut aut = Vec::new();
-//         aut.push(AuthorityNode::new(get_ip().unwrap(), 1331, None));
-//         aut.push(AuthorityNode::new(get_ip().unwrap(), 1332, None));
-//         aut.push(AuthorityNode::new(get_ip().unwrap(), 1333, None));
-//         let mut rt = Vec::new();
-//         rt.push(RoutingNode::new(get_ip().unwrap(), 1334, None));
-//         rt.push(RoutingNode::new(get_ip().unwrap(), 1335, None));
-//         let boot = Self {
-//             mstrnodes: mst,
-//             authnodes: aut,
-//             routnodes: rt,
-//         };
-
-//         if !boot.sync_routing() {
-//             eprintln!("Error syncing bootstrap routing table")
-//         }
-
-//         boot
-//     }
-
-//     /**
-//      * init
-//      *  current timeout at 20s
-//      * 
-//      * note: remember to add timeout in tests
-//     **/
-//     pub fn init(boot: Bootstrap) {
-//         spawn(move || {
-//             loop {
-//                 sleep(Duration::from_secs(20));
-//                 boot.broadcast_blockchain();
-//                 boot.broadcast_routingtable();
-//                 // master
-//             }
-//         });
-//     }
-
-//     fn sync_routing(&self) -> bool {
-//         let mut res = false;
-//         let mut size = self.authnodes.len();
-//         for i in 0..size {
-//             let mut j = i+1;
-//             let a1 = &self.authnodes[i];
-//             while j < size {
-//                 let a2 = &self.authnodes[j];
-//                 a1.kademlia.ping(a2.node.clone());
-//                 a2.kademlia.ping(a1.node.clone());
-//                 j += 1
-//             }
-//         }
-//         size = self.routnodes.len();
-//         for i in 0..size {
-//             let mut j = i+1;
-//             let r1 = &self.routnodes[i];
-//             while j < size {
-//                 let r2 = &self.routnodes[j];
-//                 r1.kademlia.ping(r2.node.clone());
-//                 r2.kademlia.ping(r1.node.clone());
-//                 j += 1
-//             }
-//         }
-//         for master in &self.mstrnodes {
-//             for auth in &self.authnodes {
-//                 res = master.kademlia.ping(auth.node.clone());
-//             }
-//             for route in &self.routnodes {
-//                 res = master.kademlia.ping(route.node.clone());
-//             }
-//         }
-//         for route in &self.routnodes {
-//             for auth in &self.authnodes {
-//                 res = route.kademlia.ping(auth.node.clone());
-//             }
-//         }
-
-//         res
-//     }
-
-//     fn broadcast_blockchain(&self)  {
-//         let size = self.authnodes.len();
-//         for i in 0..size {
-//             let mut j = i+1;
-//             let n1 = &self.authnodes[i];
-//             while j < size {
-//                 let n2 = &self.authnodes[j];
-//                 let n1remote = n1.kademlia.query_blockchain(n2.node.clone()).unwrap();
-//                 let n2remote = n2.kademlia.query_blockchain(n1.node.clone()).unwrap();
-//                 n1.verify_chain(n1remote);
-//                 n2.verify_chain(n2remote);
-//                 j += 1;
-//             }
-//         }
-//     }
-
-//     /*
-//         Only syncs routingtable of
-//         routing nodes. Thus, if Lightnode
-//         is present in other bootstrap node
-//         the "global" routing table wont be notified.
-//     */
-//     fn broadcast_routingtable(&self) {
-//         let mut newnodes: Vec<Node> = Vec::new();
-//         let size = self.routnodes.len();
-//         for i in 0..size {
-//             let mut j = i+1;
-//             let rn1 = &self.routnodes[i];
-//             while j < size {
-//                 let rn2 = &self.routnodes[j];
-//                 newnodes.append(&mut rn1.get_unknown_nodes(rn2));
-//                 newnodes.append(&mut rn2.get_unknown_nodes(rn1));
-//                 j = j+1;
-//             }
-//         }
-
-//         if !newnodes.is_empty() {
-//             for rn in self.routnodes.iter() {
-//                 rn.update_routing_table(newnodes.clone());
-//             }
-//         }
-//     }
-// }
-
-//  ***
-//  ---
-//  ***
-
-
-/*
-    Upon creation, AppNode needs to:
-        - join kad network
-        - get global blockchain and register (mine/add_block) block
-        in blockchain
-*/
 
 #[derive(Clone)]
 pub struct Bootstrap {
-    pub nodes: Vec<AppNode>
+    pub nodes: Vec<AppNode>,
+    pub bk_history: HashSet<Vec<u8>>
 }
 
 impl Bootstrap {
@@ -167,16 +26,17 @@ impl Bootstrap {
         res.push(AppNode::new(get_ip().unwrap(), 1332, None));
         res.push(AppNode::new(get_ip().unwrap(), 1333, None));
 
-        let boot = Self {
-            nodes: res
+        let mut boot = Self {
+            nodes: res,
+            bk_history: HashSet::new()
         };
 
-        boot.sync();
+        boot = boot.init_sync();
 
         boot
     }
 
-    fn sync(&self) {
+    fn init_sync(mut self) -> Bootstrap {
         let mut i = 0;
         while i < self.nodes.len() {
             self.nodes[i].add_block(format!("REGISTER: {id}", id=self.nodes[i].node.get_addr()));
@@ -190,9 +50,74 @@ impl Bootstrap {
                 }
                 j += 1;
             }
+            let blockchain = self.nodes[i].kademlia.blockchain.lock()
+                .expect("Error setting lock in local blockchain");
+            self.bk_history.insert(blockchain.hash());
+            drop(blockchain);
             i += 1;
         }
+        self
     }
+
+    // Note: Added node timeout
+    pub fn full_bk_sync(mut boot: Bootstrap) {
+        spawn(move || {
+            loop {
+                sleep(Duration::from_secs(NODETIMEOUT));
+                let mut hit: usize = 0;
+                let mut hashes: Vec<Vec<u8>> = Vec::new();
+                for node in &boot.nodes {
+                    let blockchain = node.kademlia.blockchain.lock()
+                        .expect("Error setting lock in local blockchain");
+                    let blockchain_hash = blockchain.hash();
+                    drop(blockchain);
+                    if !boot.bk_history.contains(&blockchain_hash) {
+                        hit = 1
+                    }
+                    hashes.push(blockchain_hash);
+                }
+
+                if hit == 1 {
+                    boot.bk_history.clear();
+                    for hash in hashes.pop() {
+                        boot.bk_history.insert(hash);
+                    }
+                    let mut i = 0;
+                    while i < boot.nodes.len() {
+                        let mut j = 0;
+                            while j < boot.nodes.len() {
+                                boot.nodes[j].choose_chain(boot.nodes[i].clone());
+                                boot.nodes[i].choose_chain(boot.nodes[j].clone());
+                                j += 1
+                            }
+                        i += 1
+                    }
+                }
+            }
+        });
+    }
+
+    /* TODO: trigger full_sync only if current chain and history are diff: use hash of bks for cmp
+    pub fn full_sync(bootstrap: Bootstrap) {
+        spawn(move || {
+            loop {
+                sleep(Duration::from_secs(5)); // Adjust timeout accordingly
+                let mut i = 0;
+                while i < bootstrap.nodes.len() {
+                    let mut j = 0;
+                    while j < bootstrap.nodes.len() {
+                        if i != j {
+                            bootstrap.nodes[j].choose_chain(bootstrap.nodes[i].clone());
+                            bootstrap.nodes[i].choose_chain(bootstrap.nodes[j].clone());
+                        }
+                        j += 1;
+                    }
+                    i += 1;
+                }
+            }
+        });
+    }
+    */
 }
 
 #[derive(Clone)]
@@ -203,11 +128,6 @@ pub struct AppNode {
 }
 
 // NOTE: blockchain should be queried before any action
-/*
-    TODO: 
-        - Change publish/subscribe/add_msg to blockchain
-        - Fix pubsub_subscribe_test
-*/
 impl AppNode {
     pub fn new(addr: String, port: u16, bootstrap: Option<Node>) -> Self {
         let node = Node::new(addr.clone(), port.clone());
@@ -222,7 +142,7 @@ impl AppNode {
         self.kademlia.insert(topic.clone(), self.pubsub.to_string());
         println!("\t[AN{}]: published topic: {}", self.node.port, topic)
         // TODO: Call pubsub msg loop
-        // TODO: Maybe add block when publish is trigered
+        // TODO: Maybe add block when publish is triggered
     }
 
     pub fn subscribe(&self, topic: String) -> bool {
@@ -259,7 +179,7 @@ impl AppNode {
         false
     }
 
-    // register method - arg: AppNode
+    // register method - arg: AppNode, Note: Added node timeout
     pub fn join_network(&self, bootnode: AppNode) -> bool {
         let find_node = full_rpc_proc(&self.kademlia.rpc, KademliaRequest::NodeJoin(self.node.clone()), bootnode.node.clone());
         
@@ -290,13 +210,12 @@ impl AppNode {
                     drop(blockchain);
 
                     // TODO
-                    let add_block = full_rpc_proc(&self.kademlia.rpc, KademliaRequest::AddBlock(block), bootnode.node);
+                    let add_block = full_rpc_proc(&self.kademlia.rpc, KademliaRequest::AddBlock(block), bootnode.node.clone());
                     if let Some(KademliaResponse::Ping) = add_block {
+                        sleep(Duration::from_secs(NODETIMEOUT));
                         return true
                     }
                 }
-
-                return true
             } else {
                 println!("\t[AN{}]: Error joining network - No nearby nodes found", self.node.port)
             }
@@ -328,6 +247,8 @@ impl AppNode {
         Block::new(id, prev_hash, data)
     }
 
+    // Used to sync bootstrap nodes (AppNode's)
+    // TODO: change appnode to reference
     fn choose_chain(&self, appnode: AppNode) {
         let query_blockchain = full_rpc_proc(&self.kademlia.rpc, KademliaRequest::QueryLocalBlockChain, appnode.node.clone());
         if let Some(KademliaResponse::QueryLocalBlockChain(remoteblocks)) = query_blockchain {
@@ -372,116 +293,48 @@ impl AppNode {
         println!("\t[AN{}]: Error subscribing to topic: {}", self.node.port, topic);
         false
     }
+
+    /* Used to sync nodes closest to bootnode:
+    fn sync_bk(&self, bootnode: AppNode) -> bool {
+        let nodeswithdist = self.kademlia.find_node(&bootnode.node.id);
+       
+        // ---
+        // println!("SYNC_BK NODES: {:?}", nodeswithdist);
+        // ---
+
+        let blockchain = self.kademlia.blockchain.lock()
+            .expect("Error setting lock in blockchain");
+        let local_blocks = blockchain.blocks.clone();
+        drop(blockchain);
+        for NodeWithDistance(node, _) in nodeswithdist {
+            let sync_blockchain = full_rpc_proc(&self.kademlia.rpc, KademliaRequest::SyncLocalBlockChain(local_blocks.clone()), node);
+            if let Some(KademliaResponse::Ping) = sync_blockchain {
+                return true 
+            }
+        }
+        false
+    }*/
 }
 
-//  ***
-//  ---
-//  ***
+/* 
+    App Instance:
+    Prerequisites -> AppNode instance & Bootstrap node addr
+    Keep BootAppNode reference, used for sync 
+*/
+pub struct App {
+    pub appnode: AppNode,
+    pub bootappnode: AppNode
+}
 
-// impl AuthorityNode {
-//     pub fn new(addr: String, port: u16, bootstrap: Option<Node>) -> Self {
-//         Self {
-//             node: Node::new(addr.clone(), port.clone()),
-//             kademlia: KademliaInstance::new(addr, port, bootstrap)
-//         }
-//     }
-
-//     pub fn add_block(&self, block: Block) {
-//         let mut blockchain = self.kademlia.blockchain.lock()
-//             .expect("Error setting lock in local blockchain");
-//         blockchain.add_block(block.clone());
-//     }
-
-//     pub fn verify_chain(&self, remote: Vec<Block>) {
-//         let mut blockchain = self.kademlia.blockchain.lock()
-//             .expect("Error setting lock in blockchain");
-//         let chain = blockchain.choose_chain(blockchain.blocks.clone(), remote);
-//         blockchain.blocks = chain;
-//     }
-// }
-
-// impl RoutingNode {
-//     pub fn new(addr: String, port: u16, bootstrap: Option<Node>) -> Self {
-//         Self {
-//             node: Node::new(addr.clone(), port.clone()),
-//             kademlia: KademliaInstance::new(addr, port, bootstrap)
-//         }
-//     }
-
-//     fn update_routing_table(&self, nodes: Vec<Node>) {
-//         let mut routingtable = self.kademlia.routingtable.lock()
-//             .expect("Error setting lock in routing table");
-
-//         for node in nodes {
-//             routingtable.update_routing_table(node);
-//         }
-//     } 
-
-//     fn get_unknown_nodes(&self, remotenode: &RoutingNode) -> Vec<Node> {
-//         let localroutingtable = self.kademlia.routingtable.lock()
-//             .expect("Error setting lock in routing table");
-//         let remoteroutingtable = remotenode.kademlia.routingtable.lock()
-//             .expect("Error setting lock in routing table");
-
-//         let mut nodes = Vec::new();
-//         for bucket in remoteroutingtable.kbuckets.iter() {
-//             for node in bucket.nodes.iter() {
-//                 if !localroutingtable.contains_node(&node.id) {
-//                     nodes.push(node.clone())
-//                 }
-//             }
-//         }
-//         drop(localroutingtable);
-//         drop(remoteroutingtable);
-
-//         nodes
-//     }
-// }
-
-// impl LightNode {
-//     pub fn new(addr: String, port: u16, bootstrap: Option<Node>) -> Self {
-//         Self {
-//             node: Node::new(addr.clone(), port.clone()),
-//             kademlia: KademliaInstance::new(addr, port, bootstrap)
-//         }
+impl App {
+    pub fn new(addr: String, port: u16, bootappnode: AppNode) -> Self  {
+        let bootnode = bootappnode.node.clone();
+        let appnode = AppNode::new(addr, port, Some(bootnode));
+        appnode.join_network(bootappnode.clone());
         
-//         // range addr / range ports
-//         //  1355: 1340-1370 / 192.178.0.1: 192.178.0.1
-//         // ping
-//         // join_network
-//     }
-
-//     /*
-//         Join Network:
-//          In order for the LightNode to join,
-//          a bootstrap node must be known.
-//     */
-//     pub fn join_network(&self, bootnode: Node) -> bool {
-//         let find_node = full_rpc_proc(&self.kademlia.rpc, KademliaRequest::NodeJoin(self.node.clone()), bootnode);
-        
-//         if let Some(KademliaResponse::NodeJoin(nodes)) = find_node {
-//             if !nodes.is_empty() {
-//                 for node in nodes {
-//                     if node.id != self.node.id {
-//                         full_rpc_proc(&self.kademlia.rpc, KademliaRequest::NodeJoin(self.node.clone()), node.clone());
-//                         let mut routingtable = self.kademlia.routingtable.lock()
-//                             .expect("Error setting lock in routing table");
-//                         routingtable.update_routing_table(node);
-//                         drop(routingtable)
-//                     }
-//                 }
-//                 return true
-//             } else {
-//                 println!("\t[LT{}]: Error joining network - No nearby nodes found", self.node.port)
-//             }
-//         } else {
-//             // TODO
-//             println!("\t[LT{}]: Error joining network", self.node.port)
-//         }
-//         false
-//     }
-// }
-
-//  ***
-//  ---
-//  ***
+        Self {
+            appnode: appnode,
+            bootappnode: bootappnode
+        }
+    }
+}

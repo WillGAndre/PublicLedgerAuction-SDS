@@ -706,13 +706,24 @@ impl KademliaInstance {
                 let mut blockchain = self.blockchain.lock()
                     .expect("Error setting lock in local blockchain");
                 blockchain.add_block(block.clone());
+                // TODO: DROP blockchain
                 (KademliaResponse::Ping, request)
             },
             KademliaRequest::QueryLocalBlockChain => {
                 let blockchain = self.blockchain.lock()
                     .expect("Error setting lock in local blockchain");
+                // TODO: DROP blockchain
                 (KademliaResponse::QueryLocalBlockChain(blockchain.blocks.clone()), request)
             },
+            KademliaRequest::SyncLocalBlockChain(ref blocks) => {
+                let mut blockchain = self.blockchain.lock()
+                    .expect("Error setting lock in local blockchain");
+                blockchain.blocks = blockchain.choose_chain(blockchain.blocks.clone(), blocks.clone());
+                drop(blockchain);
+                
+                (KademliaResponse::Ping, request)
+            },
+
 
             KademliaRequest::NodeJoin(ref node) => {
                 let nodes: Vec<Node> = self.find_node(&node.id).iter().map(|nwd| nwd.0.clone()).collect();

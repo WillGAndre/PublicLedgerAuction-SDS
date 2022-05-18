@@ -170,6 +170,12 @@ impl Blockchain {
     pub fn string(&self) -> String {
         self.to_string()
     }
+    
+    pub fn hash(&self) -> Vec<u8> {
+        let mut hasher = Sha256::new();
+        hasher.update(self.to_string().as_bytes());
+        hasher.finalize().as_slice().to_owned()
+    }
 }
 
 impl Block {

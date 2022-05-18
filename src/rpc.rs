@@ -29,6 +29,7 @@ pub enum KademliaRequest {
     // BLOCKCHAIN REQUESTS ----
     QueryLocalBlockChain,
     AddBlock(Block),
+    SyncLocalBlockChain(Vec<Block>),
     // ----
 
     NodeJoin(Node)
