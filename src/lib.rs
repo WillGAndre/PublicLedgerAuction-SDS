@@ -26,7 +26,7 @@ const ALPHA: usize = 3;
 const TREPLICATE: u64 = 3600; 
 
 // Timeout in secs
-const NODETIMEOUT: u64 = 2;
+const NODETIMEOUT: u64 = 1;
 
 #[cfg(test)]
 mod tests {
@@ -490,7 +490,7 @@ mod tests {
 
     // Note: Add timeout before prints, when invoking full_bk_sync
     #[test]
-    fn simple_sync_test() {
+    fn simple_bk_sync_test() {
         let boot = Bootstrap::new();
         Bootstrap::full_bk_sync(boot.clone());
         println!();
@@ -508,6 +508,9 @@ mod tests {
         println!();
         println!("AppNode0 BK:");
         appnode0.kademlia.print_blockchain();
+        println!(" --- ");
+        println!("AppNode1 BK:");
+        appnode1.kademlia.print_blockchain();
         println!(" --- ");
         println!("BootNode0 BK:");
         boot.nodes[0].kademlia.print_blockchain();
