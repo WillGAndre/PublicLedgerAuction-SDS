@@ -15,7 +15,7 @@ use base64::decode;
 #[derive(Clone)]
 pub struct Bootstrap {
     pub nodes: Vec<AppNode>,
-    pub bk_history: HashSet<Vec<u8>>
+    pub bk_history: HashSet<Vec<u8>> // TODO: Use single global hash, instead of Vec of hashes
 }
 
 impl Bootstrap {
@@ -96,28 +96,6 @@ impl Bootstrap {
             }
         });
     }
-
-    /* TODO: trigger full_sync only if current chain and history are diff: use hash of bks for cmp
-    pub fn full_sync(bootstrap: Bootstrap) {
-        spawn(move || {
-            loop {
-                sleep(Duration::from_secs(5)); // Adjust timeout accordingly
-                let mut i = 0;
-                while i < bootstrap.nodes.len() {
-                    let mut j = 0;
-                    while j < bootstrap.nodes.len() {
-                        if i != j {
-                            bootstrap.nodes[j].choose_chain(bootstrap.nodes[i].clone());
-                            bootstrap.nodes[i].choose_chain(bootstrap.nodes[j].clone());
-                        }
-                        j += 1;
-                    }
-                    i += 1;
-                }
-            }
-        });
-    }
-    */
 }
 
 #[derive(Clone)]
@@ -295,27 +273,6 @@ impl AppNode {
         println!("\t[AN{}]: Error subscribing to topic: {}", self.node.port, topic);
         false
     }
-
-    /* Used to sync nodes closest to bootnode:
-    fn sync_bk(&self, bootnode: AppNode) -> bool {
-        let nodeswithdist = self.kademlia.find_node(&bootnode.node.id);
-       
-        // ---
-        // println!("SYNC_BK NODES: {:?}", nodeswithdist);
-        // ---
-
-        let blockchain = self.kademlia.blockchain.lock()
-            .expect("Error setting lock in blockchain");
-        let local_blocks = blockchain.blocks.clone();
-        drop(blockchain);
-        for NodeWithDistance(node, _) in nodeswithdist {
-            let sync_blockchain = full_rpc_proc(&self.kademlia.rpc, KademliaRequest::SyncLocalBlockChain(local_blocks.clone()), node);
-            if let Some(KademliaResponse::Ping) = sync_blockchain {
-                return true 
-            }
-        }
-        false
-    }*/
 }
 
 /* 

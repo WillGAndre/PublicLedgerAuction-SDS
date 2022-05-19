@@ -40,7 +40,8 @@ mod tests {
     use super::{N_KBUCKETS, KEY_LEN, NODETIMEOUT};
     use log::{info};
     use std::time::Duration;
-    use std::thread::{sleep};
+    use std::thread::{sleep, spawn};
+    use std::sync::mpsc::{channel, Sender};
 
     use base64::{decode};
 
@@ -496,12 +497,14 @@ mod tests {
         println!();
 
         let appnode0 = AppNode::new(aux::get_ip().unwrap(), 1335, None);
-        let _register0 = appnode0.join_network(boot.nodes[0].clone());
-
         let appnode1 = AppNode::new(aux::get_ip().unwrap(), 1336, None);
-        let _register1 = appnode1.join_network(boot.nodes[1].clone());
+        let appnode2 = AppNode::new(aux::get_ip().unwrap(), 1337, None);
 
-        // sleep(Duration::from_secs(NODETIMEOUT + 1));
+        let _register0 = appnode0.join_network(boot.nodes[0].clone());
+        let _register1 = appnode1.join_network(boot.nodes[1].clone());
+        let _register2 = appnode2.join_network(boot.nodes[2].clone());
+
+        // sleep(Duration::from_secs(50));
 
         println!();
         println!("AppNode0 BK:");
@@ -522,6 +525,8 @@ mod tests {
         println!("BootNode3 BK:");
         boot.nodes[3].kademlia.print_blockchain()
     }
+
+    // TODO TEST: Add test where threads are called to register nodes
 
     fn decode_data(data: String) -> String {
         String::from_utf8(decode(data.to_string()).expect("Error decoding data"))
