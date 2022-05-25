@@ -106,13 +106,20 @@ impl Blockchain {
         self.blocks.push(genesis_block);
     }
 
-    pub fn add_block(&mut self, block: Block) {
+    pub fn add_block(&mut self, block: Block) -> bool {
         let prev_block = self.blocks.last().expect("At least one block");
         if self.is_block_valid(&block, prev_block) {
             self.blocks.push(block);
+            return true
         } else {
-            eprint!("unable to add block - invalid")
+            // error msg
+            // eprint!("unable to add block - invalid")
         }
+        false
+    }
+
+    pub fn remove_last_block(&mut self) {
+        self.blocks.pop();
     }
 
     fn is_block_valid(&self, block: &Block, prev_block: &Block) -> bool {

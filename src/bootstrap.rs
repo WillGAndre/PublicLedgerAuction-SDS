@@ -8,14 +8,14 @@ use super::NODETIMEOUT;
 
 use std::thread::{spawn, sleep};
 use std::time::Duration;
+use chrono::{DateTime, Local};
 
-use std::collections::HashSet;
 use base64::decode;
 
 #[derive(Clone)]
 pub struct Bootstrap {
     pub nodes: Vec<AppNode>,
-    pub bk_history: HashSet<Vec<u8>> // TODO: Use single global hash, instead of Vec of hashes
+    pub bk_hash: Vec<u8>,
 }
 
 impl Bootstrap {
@@ -28,7 +28,7 @@ impl Bootstrap {
 
         let mut boot = Self {
             nodes: res,
-            bk_history: HashSet::new()
+            bk_hash: Vec::new()
         };
 
         boot = boot.init_sync();
@@ -37,6 +37,7 @@ impl Bootstrap {
     }
 
     fn init_sync(mut self) -> Bootstrap {
+        let mut global_hash: Option<Vec<u8>> = None;
         let mut i = 0;
         while i < self.nodes.len() {
             self.nodes[i].add_block(format!("REGISTER: {id}", id=self.nodes[i].node.get_addr()));
@@ -52,10 +53,11 @@ impl Bootstrap {
             }
             let blockchain = self.nodes[i].kademlia.blockchain.lock()
                 .expect("Error setting lock in local blockchain");
-            self.bk_history.insert(blockchain.hash());
+            global_hash = Some(blockchain.hash());
             drop(blockchain);
             i += 1;
         }
+        self.bk_hash = global_hash.unwrap();
         self
     }
 
@@ -71,17 +73,14 @@ impl Bootstrap {
                         .expect("Error setting lock in local blockchain");
                     let blockchain_hash = blockchain.hash();
                     drop(blockchain);
-                    if !boot.bk_history.contains(&blockchain_hash) {
+                    if blockchain_hash != boot.bk_hash {
                         hit = 1
                     }
                     hashes.push(blockchain_hash);
                 }
 
                 if hit == 1 {
-                    boot.bk_history.clear();
-                    for hash in hashes.pop() {
-                        boot.bk_history.insert(hash);
-                    }
+                    hashes.clear();
                     let mut i = 0;
                     while i < boot.nodes.len() {
                         let mut j = 0;
@@ -92,6 +91,20 @@ impl Bootstrap {
                             }
                         i += 1
                     }
+                    let mut global_hash: Option<Vec<u8>> = None;
+                    for node in &boot.nodes {
+                        let blockchain = node.kademlia.blockchain.lock()
+                            .expect("Error setting lock in local blockchain");
+                        let blockchain_hash = blockchain.hash();
+                        drop(blockchain);
+                        if global_hash == None {
+                            global_hash = Some(blockchain_hash)
+                        } else if global_hash != Some(blockchain_hash) {
+                            println!("\t[BOOT]: FULL SYNC - Error synchronizing blockchain");
+                            break; // sync next timeout
+                        }
+                    }
+                    boot.bk_hash = global_hash.unwrap();
                 }
             }
         });
@@ -117,10 +130,12 @@ impl AppNode {
     }
 
     pub fn publish(&self, topic: String) {
-        self.kademlia.insert(topic.clone(), self.pubsub.to_string());
+        let mut pubsub = self.pubsub.clone();
+        pubsub.set_ttl(Local::now() + chrono::Duration::minutes(15));
+        self.kademlia.insert(topic.clone(), pubsub.to_string()); // self.kademlia.insert(topic.clone(), self.pubsub.to_string());
         println!("\t[AN{}]: published topic: {}", self.node.port, topic)
         // TODO: Call pubsub msg loop
-        // TODO: Maybe add block when publish is triggered
+        // TODO: Maybe add block when publish is triggered, set ttl for pubsub instance 
     }
 
     pub fn subscribe(&self, topic: String) -> bool {
@@ -174,7 +189,6 @@ impl AppNode {
                 }
                 
                 let query_blockchain = full_rpc_proc(&self.kademlia.rpc, KademliaRequest::QueryLocalBlockChain, bootnode.node.clone());
-
                 if let Some(KademliaResponse::QueryLocalBlockChain(blocks)) = query_blockchain {
                     let mut blockchain = self.kademlia.blockchain.lock()
                         .expect("Error setting lock in local blockchain");
@@ -188,12 +202,18 @@ impl AppNode {
                     blockchain.add_block(block.clone());
                     drop(blockchain);
 
-                    // TODO
                     let add_block = full_rpc_proc(&self.kademlia.rpc, KademliaRequest::AddBlock(block), bootnode.node.clone());
                     if let Some(KademliaResponse::Ping) = add_block {
                         println!("\t[AN{}]: Added Block info ({})", self.node.port, data.clone());
                         sleep(Duration::from_secs(NODETIMEOUT));
                         return true
+                    } else if let Some(KademliaResponse::PingUnableProcReq) = add_block {
+                        let mut blockchain = self.kademlia.blockchain.lock()
+                            .expect("Error setting lock in local blockchain");
+                        blockchain.remove_last_block();
+                        drop(blockchain);
+                        println!("\t[AN{}]: Unable to add block info ({})", self.node.port, data.clone());
+                        return false
                     }
                 }
             } else {
@@ -210,11 +230,13 @@ impl AppNode {
         let block = self.mine_block(data.clone());
         let mut blockchain = self.kademlia.blockchain.lock()
             .expect("Error setting lock in local blockchain");
-        blockchain.add_block(block.clone());
+        let res = blockchain.add_block(block.clone());
         drop(blockchain);
         
         // ---
-        println!("\t[AN{}]: Added Block info ({})", self.node.port, data)
+        if res {
+            println!("\t[AN{}]: Added Block info ({})", self.node.port, data)
+        }
     }
 
     fn mine_block(&self, data: String) -> Block {
@@ -251,7 +273,10 @@ impl AppNode {
             let publisher: String = String::from(data_vec[0]);
             let substack: Vec<String> = data_vec[1].trim_matches(pattern).split(' ').map(|s| String::from(s)).collect();
             let msgstack: Vec<String> = data_vec[2].trim_matches(pattern).split(' ').map(|s| String::from(s)).collect();
-            return Some(PubSubInstance::new(publisher, Some(msgstack), Some(substack)));
+            let ttl: DateTime<Local> = data_vec[3].parse().unwrap();
+            let mut pubsub = PubSubInstance::new(publisher, Some(msgstack), Some(substack));
+            pubsub.set_ttl(ttl);
+            return Some(pubsub);
         }
         None
     }
@@ -285,11 +310,24 @@ pub struct App {
     pub bootappnode: AppNode
 }
 
+/*
+    TODO:
+        - periodically request blockchain
+        - pubsub topics/msgs alerts
+        - add PoW challenge before network join (verified by bootstrap node)
+*/
 impl App {
     pub fn new(addr: String, port: u16, bootappnode: AppNode) -> Self  {
         let bootnode = bootappnode.node.clone();
         let appnode = AppNode::new(addr, port, Some(bootnode));
-        appnode.join_network(bootappnode.clone());
+        let register = appnode.join_network(bootappnode.clone());
+        let mut iter = 2;
+        while !register {
+            if iter == 5 { break; }
+            sleep(Duration::from_secs(NODETIMEOUT));
+            appnode.join_network(bootappnode.clone());
+            iter += 1;
+        }
         
         Self {
             appnode: appnode,

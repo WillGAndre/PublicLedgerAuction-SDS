@@ -29,7 +29,6 @@ pub enum KademliaRequest {
     // BLOCKCHAIN REQUESTS ----
     QueryLocalBlockChain,
     AddBlock(Block),
-    SyncLocalBlockChain(Vec<Block>),
     // ----
 
     NodeJoin(Node)
@@ -38,6 +37,7 @@ pub enum KademliaRequest {
 #[derive(Serialize, Deserialize, Debug)]
 pub enum KademliaResponse {
     Ping,
+    PingUnableProcReq,
     QueryNode(Vec<NodeWithDistance>),
     QueryValue(QueryValueResult),
 

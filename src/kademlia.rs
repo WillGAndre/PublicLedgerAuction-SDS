@@ -673,13 +673,14 @@ impl KademliaInstance {
                 let mut hashmap = self.hashmap.lock()
                     .expect("");
                 hashmap.insert(key.to_string(), value.to_string());
+                drop(hashmap);
                 (KademliaResponse::Ping, request)
             },
             KademliaRequest::QueryNode(ref id) => {
                 let routingtable = self.routingtable.lock()
                     .expect("Error setting lock in routing table");
-
                 let result = routingtable.get_bucket_nodes(id);
+                drop(routingtable);
 
                 (KademliaResponse::QueryNode(result), request)
             },
@@ -696,8 +697,9 @@ impl KademliaInstance {
                     None => {
                         let routingtable = self.routingtable.lock()
                             .expect("Error setting lock in routing table");
-                        
-                        (KademliaResponse::QueryValue(QueryValueResult::Nodes(routingtable.get_bucket_nodes(&key))), request)
+                        let bucket_nodes = routingtable.get_bucket_nodes(&key);
+                        drop(routingtable);
+                        (KademliaResponse::QueryValue(QueryValueResult::Nodes(bucket_nodes)), request)
                     }
                 }
             },
@@ -705,32 +707,27 @@ impl KademliaInstance {
             KademliaRequest::AddBlock(ref block) => {
                 let mut blockchain = self.blockchain.lock()
                     .expect("Error setting lock in local blockchain");
-                blockchain.add_block(block.clone());
-                // TODO: DROP blockchain
-                (KademliaResponse::Ping, request)
+                let res = blockchain.add_block(block.clone());
+                drop(blockchain);
+                if res {
+                    return (KademliaResponse::Ping, request)
+                }
+                (KademliaResponse::PingUnableProcReq, request)
             },
             KademliaRequest::QueryLocalBlockChain => {
                 let blockchain = self.blockchain.lock()
                     .expect("Error setting lock in local blockchain");
-                // TODO: DROP blockchain
-                (KademliaResponse::QueryLocalBlockChain(blockchain.blocks.clone()), request)
-            },
-            KademliaRequest::SyncLocalBlockChain(ref blocks) => {
-                let mut blockchain = self.blockchain.lock()
-                    .expect("Error setting lock in local blockchain");
-                blockchain.blocks = blockchain.choose_chain(blockchain.blocks.clone(), blocks.clone());
+                let blocks = blockchain.blocks.clone();
                 drop(blockchain);
-                
-                (KademliaResponse::Ping, request)
+                (KademliaResponse::QueryLocalBlockChain(blocks), request)
             },
-
 
             KademliaRequest::NodeJoin(ref node) => {
                 let nodes: Vec<Node> = self.find_node(&node.id).iter().map(|nwd| nwd.0.clone()).collect();
                 let mut routingtable = self.routingtable.lock()
                     .expect("Error setting lock in routing table");
                 routingtable.update_routing_table(node.clone());
-                
+                drop(routingtable);
                 (KademliaResponse::NodeJoin(nodes), request)
             },
         }

@@ -1,14 +1,17 @@
 use std::sync::{Arc, Mutex};
 use std::fmt::{Display, Formatter, Result};
 use base64::{encode};
+use chrono::{DateTime, Local};
 
 #[derive(Debug, Clone)]
 pub struct PubSubInstance {
     pub msgstack: Arc<Mutex<Vec<String>>>,
     pub substack: Arc<Mutex<Vec<String>>>,
-    pub publisher: String
+    pub publisher: String,
+    pub ttl: Option<DateTime<Local>>,
 }
 
+// TODO: Add verify_pubsub to every action (add_msg/add_sub)
 /*
     Improvement:
      - Use compression function to compress string (pubsub instance),
@@ -24,14 +27,34 @@ impl PubSubInstance {
                 Self {
                     msgstack: Arc::new(Mutex::new(msgstack.unwrap())),
                     substack: Arc::new(Mutex::new(substack.unwrap())),
-                    publisher: publisher
+                    publisher: publisher,
+                    ttl: None
                 }
         }
         Self {
             msgstack: Arc::new(Mutex::new(Vec::new())),
             substack: Arc::new(Mutex::new(Vec::new())),
-            publisher: publisher
+            publisher: publisher,
+            ttl: None
         }
+    }
+    
+    pub fn set_ttl(&mut self, ttl: DateTime<Local>) {
+        self.ttl = Some(ttl);
+    }
+
+    pub fn verify_pubsub(&self) -> bool {
+        if self.ttl == None {
+            return true
+        }
+
+        let time = Local::now();
+        let diff = (time - self.ttl.unwrap()).num_minutes();
+        if diff > 0 {
+            return true
+        }
+        
+        false
     }
 
     // TODO: loop -> Relay msgs using substack (called when publish is performed)
@@ -129,6 +152,15 @@ impl PubSubInstance {
         str_to_encode.push_str(&self.print_substack());
         str_to_encode.push_str(";");
         str_to_encode.push_str(&self.print_msgstack());
+        str_to_encode.push_str(";");
+        if self.ttl != None {
+            str_to_encode.push_str(&format!("{}", (self.ttl.unwrap())))
+        } else {
+            str_to_encode.push_str("NONE")
+        }
+        // ---
+        println!("PUBSUB BEFORE ENCODE: {}", str_to_encode);
+        // ---
         encode(str_to_encode)
     }
 }

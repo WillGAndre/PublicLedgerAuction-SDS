@@ -424,7 +424,7 @@ mod tests {
     #[test]
     fn pubsub_addmsg_test() {
         let boot = Bootstrap::new();
-        // Bootstrap::full_sync(boot.clone());
+        Bootstrap::full_bk_sync(boot.clone());
         println!();
 
         let appnode0 = AppNode::new(aux::get_ip().unwrap(), 1335, None);
@@ -489,7 +489,6 @@ mod tests {
         println!("{}", appnode2.kademlia.print_hashmap());
     }
 
-    // Note: Add timeout before prints, when invoking full_bk_sync
     #[test]
     fn simple_bk_sync_test() {
         let boot = Bootstrap::new();
@@ -500,11 +499,10 @@ mod tests {
         let appnode1 = AppNode::new(aux::get_ip().unwrap(), 1336, None);
         let appnode2 = AppNode::new(aux::get_ip().unwrap(), 1337, None);
 
+
         let _register0 = appnode0.join_network(boot.nodes[0].clone());
         let _register1 = appnode1.join_network(boot.nodes[1].clone());
         let _register2 = appnode2.join_network(boot.nodes[2].clone());
-
-        // sleep(Duration::from_secs(50));
 
         println!();
         println!("AppNode0 BK:");
@@ -526,7 +524,45 @@ mod tests {
         boot.nodes[3].kademlia.print_blockchain()
     }
 
-    // TODO TEST: Add test where threads are called to register nodes
+    #[test]
+    pub fn thread_register() {
+        let boot = Bootstrap::new();
+        Bootstrap::full_bk_sync(boot.clone());
+        println!();
+
+        let appnode0 = AppNode::new(aux::get_ip().unwrap(), 1335, None);
+        let appnode1 = AppNode::new(aux::get_ip().unwrap(), 1336, None);
+        let appnode2 = AppNode::new(aux::get_ip().unwrap(), 1337, None);
+        let appnodes = vec![appnode0.clone(), appnode1.clone(), appnode2.clone()];
+        let mut threads = vec![];
+
+        for i in 0..3 {
+            let appnode = appnodes[i].clone();
+            let bootnode = boot.nodes[i].clone();
+            threads.push(spawn(move || {
+                let mut res = String::new();
+                let mut reg = appnode.join_network(bootnode.clone());
+                if !reg {
+                    sleep(Duration::from_secs(NODETIMEOUT));
+                    reg = appnode.join_network(bootnode);
+                }
+                res.push_str(&format!("REGISTER APPNODE{}: {}", i, reg));
+                return res
+            }));
+        }
+
+        for thr in threads {
+            let ans = thr.join();
+            println!("{:?}", ans);
+            println!(" --- ");
+            boot.nodes[0].kademlia.print_blockchain();
+            println!(" --- ");
+            boot.nodes[1].kademlia.print_blockchain();
+            println!(" --- ");
+            boot.nodes[2].kademlia.print_blockchain();
+            println!(" --- ");
+        }
+    }
 
     fn decode_data(data: String) -> String {
         String::from_utf8(decode(data.to_string()).expect("Error decoding data"))
