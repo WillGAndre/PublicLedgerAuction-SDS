@@ -11,7 +11,6 @@ pub struct PubSubInstance {
     pub ttl: Option<DateTime<Local>>,
 }
 
-// TODO: Add verify_pubsub to every action (add_msg/add_sub)
 /*
     Improvement:
      - Use compression function to compress string (pubsub instance),
@@ -45,11 +44,11 @@ impl PubSubInstance {
 
     pub fn verify_pubsub(&self) -> bool {
         if self.ttl == None {
-            return true
+            return false
         }
 
         let time = Local::now();
-        let diff = (time - self.ttl.unwrap()).num_minutes();
+        let diff = (self.ttl.unwrap() - time).num_minutes();
         if diff > 0 {
             return true
         }
@@ -67,14 +66,16 @@ impl PubSubInstance {
     */
 
     pub fn add_msg(&self, msg: String) {
-        let mut msgstack = self.msgstack.lock()
-            .expect("Error setting lock in msg stack");
-        msgstack.push(msg);
-        drop(msgstack)
+        if self.verify_pubsub() {
+            let mut msgstack = self.msgstack.lock()
+                .expect("Error setting lock in msg stack");
+            msgstack.push(msg);
+            drop(msgstack)
+        }
     }
 
     pub fn add_sub(&self, sub: String) {
-        if !self.verify(sub.clone()) {
+        if self.verify_pubsub() && !self.verify_addr(sub.clone()) {
             let mut substack = self.substack.lock()
                 .expect("Error setting lock in msg stack");
             substack.push(sub);
@@ -82,14 +83,10 @@ impl PubSubInstance {
         }
     }
 
-    pub fn verify(&self, addr: String) -> bool {
+    pub fn verify_addr(&self, addr: String) -> bool {
         if self.publisher == addr {
             return true
         }
-        self.verify_subs(addr)
-    }
-
-    fn verify_subs(&self, addr: String) -> bool {
         let substack = self.substack.lock()
             .expect("Error setting lock in substack");
 
@@ -159,7 +156,7 @@ impl PubSubInstance {
             str_to_encode.push_str("NONE")
         }
         // ---
-        println!("PUBSUB BEFORE ENCODE: {}", str_to_encode);
+        // println!("PUBSUB BEFORE ENCODE: {}", str_to_encode);
         // ---
         encode(str_to_encode)
     }

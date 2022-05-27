@@ -129,11 +129,11 @@ impl AppNode {
         }
     }
 
-    pub fn publish(&self, topic: String) {
+    pub fn publish(&self, topic: String, ttl: DateTime<Local>) {
         let mut pubsub = self.pubsub.clone();
-        pubsub.set_ttl(Local::now() + chrono::Duration::minutes(15));
-        self.kademlia.insert(topic.clone(), pubsub.to_string()); // self.kademlia.insert(topic.clone(), self.pubsub.to_string());
-        println!("\t[AN{}]: published topic: {}", self.node.port, topic)
+        pubsub.set_ttl(ttl);
+        self.kademlia.insert(topic.clone(), pubsub.to_string());
+        println!("\t[AN{}]: published topic: {}; Exp: {}", self.node.port, topic, ttl)
         // TODO: Call pubsub msg loop
         // TODO: Maybe add block when publish is triggered, set ttl for pubsub instance 
     }
@@ -161,7 +161,7 @@ impl AppNode {
         } else {
             let pubsub_str = pubsub.unwrap();
             let pubsub_ins = self.get_pubsub_instance(pubsub_str).unwrap();
-            if pubsub_ins.verify(self.node.get_addr()) {
+            if pubsub_ins.verify_addr(self.node.get_addr()) {
                 pubsub_ins.add_msg(msg);
                 self.kademlia.insert(topic.clone(), pubsub_ins.to_string());
                 println!("\t[AN{}]: added msg to topic: {}", self.node.port, topic);
@@ -320,12 +320,12 @@ impl App {
     pub fn new(addr: String, port: u16, bootappnode: AppNode) -> Self  {
         let bootnode = bootappnode.node.clone();
         let appnode = AppNode::new(addr, port, Some(bootnode));
-        let register = appnode.join_network(bootappnode.clone());
+        let mut register = appnode.join_network(bootappnode.clone());
         let mut iter = 2;
         while !register {
             if iter == 5 { break; }
             sleep(Duration::from_secs(NODETIMEOUT));
-            appnode.join_network(bootappnode.clone());
+            register = appnode.join_network(bootappnode.clone());
             iter += 1;
         }
         
@@ -333,5 +333,40 @@ impl App {
             appnode: appnode,
             bootappnode: bootappnode
         }
+    }
+
+    pub fn publish(&self, topic: String) -> bool {
+        let ttl = Local::now() + chrono::Duration::minutes(15);
+
+        let query_blockchain = full_rpc_proc(&self.appnode.kademlia.rpc, KademliaRequest::QueryLocalBlockChain, self.bootappnode.node.clone());
+        if let Some(KademliaResponse::QueryLocalBlockChain(blocks)) = query_blockchain {
+            let mut blockchain = self.appnode.kademlia.blockchain.lock()
+                .expect("Error setting lock in local blockchain");
+            blockchain.blocks = blockchain.choose_chain(blockchain.blocks.clone(), blocks);
+
+            let id = blockchain.blocks[blockchain.blocks.len() - 1].id + 1;
+            let prev_hash = blockchain.blocks[blockchain.blocks.len() - 1].hash.to_string();
+            let data = format!("NEW TOPIC: {}; EXP DATETIME: {}", topic, ttl);
+            let block = Block::new(id, prev_hash, data.clone());
+
+            blockchain.add_block(block.clone());
+            drop(blockchain);
+
+            let add_block = full_rpc_proc(&self.appnode.kademlia.rpc, KademliaRequest::AddBlock(block), self.bootappnode.node.clone());
+            if let Some(KademliaResponse::Ping) = add_block {
+                println!("\t[AN{}]: Added Block info ({})", self.appnode.node.port, data.clone());
+            } else if let Some(KademliaResponse::PingUnableProcReq) = add_block {
+                let mut blockchain = self.appnode.kademlia.blockchain.lock()
+                    .expect("Error setting lock in local blockchain");
+                blockchain.remove_last_block();
+                drop(blockchain);
+                println!("\t[AN{}]: Unable to add block info ({})", self.appnode.node.port, data.clone());
+                return false
+            }
+        }
+
+        self.appnode.publish(topic, ttl);
+        sleep(Duration::from_secs(NODETIMEOUT));
+        return true
     }
 }
