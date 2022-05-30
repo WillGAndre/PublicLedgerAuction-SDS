@@ -587,7 +587,12 @@ mod tests {
         let appnode1 = App::new(aux::get_ip().unwrap(), 1343, boot.nodes[1].clone());
         let appnode2 = App::new(aux::get_ip().unwrap(), 1344, boot.nodes[2].clone());
 
-        appnode1.publish(String::from("test"));
+        appnode0.publish(String::from("test"));
+
+        println!("Appnode1 subscribe to test: {}", appnode1.subscribe(String::from("test")));
+        println!("Appnode2 subscribe to test: {}", appnode2.subscribe(String::from("test")));
+
+        sleep(Duration::from_secs(2));
 
         println!();
         println!();
@@ -609,13 +614,13 @@ mod tests {
         println!("AppNode2 BK:");
         appnode2.appnode.kademlia.print_blockchain();
         println!();
-        println!("AppNode0 HMP:");
-        println!("{}", appnode0.appnode.kademlia.print_hashmap());
-        println!("AppNode1 HMP:");
-        println!("{}", appnode1.appnode.kademlia.print_hashmap());
-        println!("AppNode2 HMP:");
-        println!("{}", appnode2.appnode.kademlia.print_hashmap());
-        println!();
+        // println!("AppNode0 HMP:");
+        // println!("{}", appnode0.appnode.kademlia.print_hashmap());
+        // println!("AppNode1 HMP:");
+        // println!("{}", appnode1.appnode.kademlia.print_hashmap());
+        // println!("AppNode2 HMP:");
+        // println!("{}", appnode2.appnode.kademlia.print_hashmap());
+        // println!();
         println!(" --- ");
         println!("BootNode0 BK:");
         boot.nodes[0].kademlia.print_blockchain();
@@ -627,7 +632,12 @@ mod tests {
         boot.nodes[2].kademlia.print_blockchain();
         println!(" --- ");
         println!("BootNode3 BK:");
-        boot.nodes[3].kademlia.print_blockchain()
+        boot.nodes[3].kademlia.print_blockchain();
+        println!();
+        println!();
+        println!("AppNode0 topics found: {:?}", appnode0.topics);
+        println!("AppNode1 topics found: {:?}", appnode1.topics);
+        println!("AppNode2 topics found: {:?}", appnode2.topics);
     }
 
 

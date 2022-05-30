@@ -6,9 +6,13 @@ use super::aux::get_ip;
 use super::rpc::{full_rpc_proc, KademliaRequest, KademliaResponse, QueryValueResult};
 use super::NODETIMEOUT;
 
+use std::sync::{Arc, Mutex};
 use std::thread::{spawn, sleep};
 use std::time::Duration;
 use chrono::{DateTime, Local};
+use serde::{Deserialize, Serialize};
+use serde_json::Result;
+use std::collections::{HashMap};
 
 use base64::decode;
 
@@ -40,7 +44,7 @@ impl Bootstrap {
         let mut global_hash: Option<Vec<u8>> = None;
         let mut i = 0;
         while i < self.nodes.len() {
-            self.nodes[i].add_block(format!("REGISTER: {id}", id=self.nodes[i].node.get_addr()));
+            self.nodes[i].add_block(Data::new(format!("REGISTER: {id}", id=self.nodes[i].node.get_addr()), 0, None).to_json());
             let mut j = 0;
             while j < self.nodes.len() {
                 if i != j {
@@ -133,7 +137,7 @@ impl AppNode {
         let mut pubsub = self.pubsub.clone();
         pubsub.set_ttl(ttl);
         self.kademlia.insert(topic.clone(), pubsub.to_string());
-        println!("\t[AN{}]: published topic: {}; Exp: {}", self.node.port, topic, ttl)
+        println!("\t[AN{}]: Published topic (in DHT): {}; Exp: {}", self.node.port, topic, ttl)
         // TODO: Call pubsub msg loop
         // TODO: Maybe add block when publish is triggered, set ttl for pubsub instance 
     }
@@ -196,15 +200,19 @@ impl AppNode {
 
                     let id = blockchain.blocks[blockchain.blocks.len() - 1].id + 1;
                     let prev_hash = blockchain.blocks[blockchain.blocks.len() - 1].hash.to_string();
-                    let data = format!("REGISTER: {id}", id=self.node.get_addr());
-                    let block = Block::new(id, prev_hash, data.clone());
+                    let data = Data::new(
+                        format!("REGISTER: {id}", id=self.node.get_addr()), 
+                        0,
+                        None
+                    );
+                    let block = Block::new(id, prev_hash, data.to_json());
 
                     blockchain.add_block(block.clone());
                     drop(blockchain);
 
                     let add_block = full_rpc_proc(&self.kademlia.rpc, KademliaRequest::AddBlock(block), bootnode.node.clone());
                     if let Some(KademliaResponse::Ping) = add_block {
-                        println!("\t[AN{}]: Added Block info ({})", self.node.port, data.clone());
+                        println!("\t[AN{}]: Added Block info ({})", self.node.port, data.to_json());
                         sleep(Duration::from_secs(NODETIMEOUT));
                         return true
                     } else if let Some(KademliaResponse::PingUnableProcReq) = add_block {
@@ -212,7 +220,7 @@ impl AppNode {
                             .expect("Error setting lock in local blockchain");
                         blockchain.remove_last_block();
                         drop(blockchain);
-                        println!("\t[AN{}]: Unable to add block info ({})", self.node.port, data.clone());
+                        println!("\t[AN{}]: Unable to add block info ({})", self.node.port, data.to_json());
                         return false
                     }
                 }
@@ -300,21 +308,108 @@ impl AppNode {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Data {
+    msg: String,
+    msg_type: usize,
+    exp_time: Option<String>
+}
+
+impl Data {
+    pub fn new(msg: String, msg_type: usize, exp_time: Option<String>) -> Self {
+        Self {
+            msg: msg,
+            msg_type: msg_type,
+            exp_time: exp_time,
+        }
+    }
+
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(&self).unwrap()
+    }
+}
+
 /* 
     App Instance:
     Prerequisites -> AppNode instance & Bootstrap node addr
     Keep BootAppNode reference, used for sync 
 */
+#[derive(Clone)]
 pub struct App {
     pub appnode: AppNode,
-    pub bootappnode: AppNode
+    pub bootappnode: AppNode,
+    pub topics: Arc<Mutex<Vec<String>>>,
 }
+
+/*
+    topics: 
+        <topic;{obj: "", highest_bid: "", highest_bidder: "", publisher: "", ttl: ""}>
+*/
+#[derive(Serialize, Deserialize, Clone)]
+pub struct BidSession {
+    pub topic: String,
+    pub obj: String,
+    pub highest_bid: String,
+    pub highest_bidder: String,
+    pub publisher: String,
+    pub ttl: String,
+}
+
+impl BidSession {
+    pub fn new(topic: String, obj: String, 
+        highest_bid: String, highest_bidder: String, 
+        publisher: String, ttl: String) -> Self {
+            Self {
+                topic: topic,
+                obj: obj,
+                highest_bid: highest_bid,
+                highest_bidder: highest_bidder,
+                publisher: publisher,
+                ttl: ttl
+            }    
+        }
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(&self).unwrap()
+    }
+}
+
+/*
+    BK MSG:
+        NETWORK:
+        - REGISTER
+
+        PUBSUB:
+        - NEW TOPIC
+        - DELETE TOPIC
+        - FINISH TOPIC
+            \
+             \
+              -> TRANSACTIONS: <IP:PORT> -> <IP:PORT> ; $$$
+*/
+
+/*
+    APP MSG:
+        - SUBSCRIBE TOPIC
+            {msg: BID <TOPIC> X, sender:}
+            {msg: LEAVE <TOPIC>, sender:}
+        
+        - PUBLISH TOPIC
+            PUBLISH:
+            "
+                > topic session has started
+                > starting bid at: 100$$
+
+                (new bid > bid (100))
+                > NEW BID: X$$
+            "
+            BID <TOPIC> X -> pubsub struct ( split(str, ' ') -> [1] -> regex([0-9]+) )
+            LEAVE <TOPIC>
+*/
 
 /*
     TODO:
         - periodically request blockchain
         - pubsub topics/msgs alerts
-        - add PoW challenge before network join (verified by bootstrap node)
 */
 impl App {
     pub fn new(addr: String, port: u16, bootappnode: AppNode) -> Self  {
@@ -329,15 +424,120 @@ impl App {
             iter += 1;
         }
         
-        Self {
+        let app = Self {
             appnode: appnode,
-            bootappnode: bootappnode
-        }
+            bootappnode: bootappnode,
+            topics: Arc::new(Mutex::new(Vec::new())),
+        };
+
+        App::pull_bk(app.clone());
+
+        app
+    }
+
+    fn pull_bk(app: App) {
+        spawn(move || {
+            loop {
+                sleep(Duration::from_secs(NODETIMEOUT));
+                let query_blockchain = full_rpc_proc(&app.appnode.kademlia.rpc, KademliaRequest::QueryLocalBlockChain, app.bootappnode.node.clone());
+                if let Some(KademliaResponse::QueryLocalBlockChain(blocks)) = query_blockchain {
+                    let mut blockchain = app.appnode.kademlia.blockchain.lock()
+                        .expect("Error setting lock in local blockchain");
+                    let new_blocks = blockchain.get_diff_from_chains(blockchain.blocks.clone(), blocks.clone());
+                    blockchain.blocks = blockchain.choose_chain(blockchain.blocks.clone(), blocks);
+                    
+                    for block in new_blocks.clone() {
+                        let data: Data = serde_json::from_str(&block.data).
+                            expect("Error converting data to json");
+                        match data.msg_type {
+                            0 => {},
+                            1 => {
+                                let ttl: DateTime<Local> = data.exp_time.unwrap().parse().unwrap();
+                                let ttl_str = format!("{}", ttl);
+                                let time = Local::now();
+                                let diff = (ttl - time).num_minutes();
+                                if diff > 0 {
+                                    let mut topics = app.topics.lock()
+                                        .expect("Error setting lock in topics vec!");
+                                    let topic = format!("{};{}", data.msg, ttl_str);
+                                    if !topics.contains(&topic) {
+                                        topics.push(topic);
+                                    }
+                                    drop(topics);
+                                }
+                            },
+                            _ => {},
+                        };
+                    }
+                }
+
+            }
+        });
     }
 
     pub fn publish(&self, topic: String) -> bool {
         let ttl = Local::now() + chrono::Duration::minutes(15);
+        let ttl_str = format!("{}", ttl);
+        let data = Data::new(
+            format!("PUB_TOPIC: {}", topic), 
+            1,
+            Some(format!("{}", ttl)),
+        );
+        if self.pull_bk_add_block(data.clone()) {
+            // TODO: error handeling
+            self.appnode.publish(topic, ttl);
 
+            let topic = format!("{};{}", data.msg, ttl_str);
+            let mut topics = self.topics.lock()
+                .expect("Error setting lock in topics vec!");
+            if !topics.contains(&topic) {
+                topics.push(topic);
+            }
+            drop(topics);
+
+
+            sleep(Duration::from_secs(NODETIMEOUT));
+            return true
+        }
+
+        // Call pubsub teardown loop:
+        //  if addr == publisher addr and on pubsub exp_time hit: Send BK Block (end topic + transactions) 
+
+        false
+    }
+
+    pub fn subscribe(&self, topic: String) -> bool {
+        let topics = self.topics.lock()
+            .expect("Error setting lock in topics vec!");
+        let topics_vec: Vec<String> = topics.clone().into_iter().collect();
+        drop(topics);
+
+        let mut sub = false;
+        if !topics_vec.is_empty() {
+            for topic_state in topics_vec {
+                let topic_str: Vec<&str> = topic_state.split(";").collect();
+                if topic_str[0] == topic.clone() {
+                    let ttl: DateTime<Local> = topic_str[1].parse().unwrap();
+                    let time = Local::now();
+                    let diff = (ttl - time).num_minutes();
+                    if diff > 0 {
+                        sub = self.appnode.subscribe(topic.clone());
+                        break
+                    }
+                }
+            }
+        } else {
+            sub = self.appnode.subscribe(topic.clone());
+        }
+
+        if sub {
+            // TODO: call loop to receive msgs
+        }
+        
+        sub
+    }
+
+    fn pull_bk_add_block(&self, data: Data) -> bool {
         let query_blockchain = full_rpc_proc(&self.appnode.kademlia.rpc, KademliaRequest::QueryLocalBlockChain, self.bootappnode.node.clone());
         if let Some(KademliaResponse::QueryLocalBlockChain(blocks)) = query_blockchain {
             let mut blockchain = self.appnode.kademlia.blockchain.lock()
@@ -346,27 +546,23 @@ impl App {
 
             let id = blockchain.blocks[blockchain.blocks.len() - 1].id + 1;
             let prev_hash = blockchain.blocks[blockchain.blocks.len() - 1].hash.to_string();
-            let data = format!("NEW TOPIC: {}; EXP DATETIME: {}", topic, ttl);
-            let block = Block::new(id, prev_hash, data.clone());
+            let block = Block::new(id, prev_hash, data.to_json());
 
             blockchain.add_block(block.clone());
             drop(blockchain);
 
             let add_block = full_rpc_proc(&self.appnode.kademlia.rpc, KademliaRequest::AddBlock(block), self.bootappnode.node.clone());
             if let Some(KademliaResponse::Ping) = add_block {
-                println!("\t[AN{}]: Added Block info ({})", self.appnode.node.port, data.clone());
+                println!("\t[AN{}]: Added Block info ({})", self.appnode.node.port, data.to_json());
             } else if let Some(KademliaResponse::PingUnableProcReq) = add_block {
                 let mut blockchain = self.appnode.kademlia.blockchain.lock()
                     .expect("Error setting lock in local blockchain");
                 blockchain.remove_last_block();
                 drop(blockchain);
-                println!("\t[AN{}]: Unable to add block info ({})", self.appnode.node.port, data.clone());
+                println!("\t[AN{}]: Unable to add block info ({})", self.appnode.node.port, data.to_json());
                 return false
             }
         }
-
-        self.appnode.publish(topic, ttl);
-        sleep(Duration::from_secs(NODETIMEOUT));
-        return true
+        true
     }
 }

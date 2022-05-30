@@ -765,6 +765,8 @@ impl KademliaInstance {
     pub fn print_blockchain(&self) {
         let blockchain = self.blockchain.lock()
             .expect("Error setting lock in local blockchain"); // TODO: drop
-        println!("{:?}", blockchain)
+        let blocks = blockchain.blocks.clone();
+        drop(blockchain);
+        println!("{:?}", blocks)
     }
 }

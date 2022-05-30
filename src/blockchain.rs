@@ -174,6 +174,25 @@ impl Blockchain {
         }
     }
 
+    pub fn get_diff_from_chains(&self, local: Vec<Block>, remote: Vec<Block>) -> Vec<Block> {
+        let is_local_valid = self.is_chain_valid(&local);
+        let is_remote_valid = self.is_chain_valid(&remote);
+        let mut res: Vec<Block> = Vec::new();
+
+        if is_local_valid && is_remote_valid {
+            let local_len = local.len();
+            let remote_len = remote.len();
+            if local_len > remote_len {
+                res = local.clone().drain((local_len - (local_len - remote_len) - 1)..).collect()
+            } else if remote_len > local_len {
+                res = remote.clone().drain((remote_len - (remote_len - local_len) - 1)..).collect()
+            }
+            // TODO: what if eq
+        }  
+        
+        res
+    }
+
     pub fn string(&self) -> String {
         self.to_string()
     }
