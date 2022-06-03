@@ -1,0 +1,5 @@
+[{"id":1,"name":"Car","num_subs":4,"highest_bid":100,"highest_bidder":"Manuel","created_at":"2020-09-01T12:00:00Z", "ends_at":"2020-09-02T12:00:00Z"},
+    {"id":2,"name":"Boat","num_subs":4,"highest_bid":200,"highest_bidder":"Carlos","created_at":"2020-09-01T12:00:00Z", "ends_at":"2020-09-02T12:00:00Z"},
+    {"id":3,"name":"Painting","num_subs":4,"highest_bid":300,"highest_bidder":"Rui","created_at":"2020-09-01T12:00:00Z", "ends_at":"2020-09-02T12:00:00Z"},
+    {"id":4,"name":"Book","num_subs":10,"highest_bid":400,"highest_bidder":"Camilo","created_at":"2020-09-01T12:00:00Z", "ends_at":"2020-09-02T12:00:00Z"},
+    {"id":5,"name":"Guitar","num_subs":4,"highest_bid":500,"highest_bidder":"Manuel","created_at":"2020-09-01T12:00:00Z", "ends_at":"2020-09-02T12:00:00Z"}]
