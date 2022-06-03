@@ -11,8 +11,7 @@ use std::thread::{spawn, sleep};
 use std::time::Duration;
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
-use serde_json::Result;
-use std::collections::{HashMap};
+use serde_json::{json, Value};
 
 use base64::decode;
 
@@ -129,7 +128,7 @@ impl AppNode {
         Self {
             node: node.clone(),
             kademlia: KademliaInstance::new(addr, port, bootstrap),
-            pubsub: PubSubInstance::new(node.get_addr(), None, None)
+            pubsub: PubSubInstance::new(None, node.get_addr(), None, None)
         }
     }
 
@@ -138,7 +137,6 @@ impl AppNode {
         pubsub.set_ttl(ttl);
         self.kademlia.insert(topic.clone(), pubsub.to_string());
         println!("\t[AN{}]: Published topic (in DHT): {}; Exp: {}", self.node.port, topic, ttl)
-        // TODO: Call pubsub msg loop
         // TODO: Maybe add block when publish is triggered, set ttl for pubsub instance 
     }
 
@@ -158,6 +156,9 @@ impl AppNode {
         false
     }
 
+    // TODO:
+    //  - verify node addr
+    //  - verify msg (tuple -> (number to raise bid; sender addr))
     pub fn add_msg(&self, topic: String, msg: String) -> bool {
         let pubsub = self.kademlia.get(topic.clone());
         if pubsub == None {
@@ -166,10 +167,12 @@ impl AppNode {
             let pubsub_str = pubsub.unwrap();
             let pubsub_ins = self.get_pubsub_instance(pubsub_str).unwrap();
             if pubsub_ins.verify_addr(self.node.get_addr()) {
-                pubsub_ins.add_msg(msg);
-                self.kademlia.insert(topic.clone(), pubsub_ins.to_string());
-                println!("\t[AN{}]: added msg to topic: {}", self.node.port, topic);
-                return true
+                let status = pubsub_ins.add_msg(msg);
+                if status == 0 {
+                    self.kademlia.insert(topic.clone(), pubsub_ins.to_string());
+                    println!("\t[AN{}]: added msg to topic: {}", self.node.port, topic);
+                    return true
+                }
             }
         }
         
@@ -278,15 +281,43 @@ impl AppNode {
         let pattern: &[_] = &['[', ']'];
         let data_vec: Vec<&str> = decoded_data.split(";").collect();
         if !data_vec.is_empty() {
-            let publisher: String = String::from(data_vec[0]);
-            let substack: Vec<String> = data_vec[1].trim_matches(pattern).split(' ').map(|s| String::from(s)).collect();
-            let msgstack: Vec<String> = data_vec[2].trim_matches(pattern).split(' ').map(|s| String::from(s)).collect();
-            let ttl: DateTime<Local> = data_vec[3].parse().unwrap();
-            let mut pubsub = PubSubInstance::new(publisher, Some(msgstack), Some(substack));
-            pubsub.set_ttl(ttl);
+            let id: Option<String> = Some(String::from(data_vec[0]));
+            let publisher: String = String::from(data_vec[1]);
+            let substack: Vec<String> = data_vec[2].trim_matches(pattern).split(' ').map(|s| String::from(s)).collect();
+            let msgstack: Vec<String> = data_vec[3].trim_matches(pattern).split(' ').map(|s| String::from(s)).collect();
+            let mut pubsub = PubSubInstance::new(id, publisher, Some(msgstack), Some(substack));
+            let ttl_str: String = data_vec[4].to_string();
+            if ttl_str != "NONE" {
+                let ttl: DateTime<Local> = ttl_str.parse().unwrap(); // TODO: TEST
+                pubsub.set_ttl(ttl);
+            }
             return Some(pubsub);
         }
         None
+    }
+
+    pub fn get_pubsub_json(&self, topic: String) -> Value {
+        let pubsub = self.kademlia.get(topic.clone());
+        if pubsub == None { 
+            println!("\t[AN{}]: Error getting PubSub - couldn't find topic: {}", self.node.port, topic)
+        } else {
+            let pubsub_str = pubsub.unwrap();
+            let pubsub_ins: PubSubInstance = self.get_pubsub_instance(pubsub_str).unwrap();
+            let json: Value = pubsub_ins.as_json();
+            
+            return json!(
+                {
+                    "name": topic,
+                    "id": json["id"],
+                    "num_subs": json["num_subs"],
+                    "highest_bid": json["highest_bid"],
+                    "highest_bidder": json["highest_bidder"],
+                    "TTL": json["TTL"],
+                    "subscribed": pubsub_ins.verify_addr(self.node.get_addr())
+                }
+            )
+        }
+        json!({})
     }
 
     // TESTING: subcribe from oth node
@@ -338,39 +369,7 @@ impl Data {
 pub struct App {
     pub appnode: AppNode,
     pub bootappnode: AppNode,
-    pub topics: Arc<Mutex<Vec<String>>>,
-}
-
-/*
-    topics: 
-        <topic;{obj: "", highest_bid: "", highest_bidder: "", publisher: "", ttl: ""}>
-*/
-#[derive(Serialize, Deserialize, Clone)]
-pub struct BidSession {
-    pub topic: String,
-    pub obj: String,
-    pub highest_bid: String,
-    pub highest_bidder: String,
-    pub publisher: String,
-    pub ttl: String,
-}
-
-impl BidSession {
-    pub fn new(topic: String, obj: String, 
-        highest_bid: String, highest_bidder: String, 
-        publisher: String, ttl: String) -> Self {
-            Self {
-                topic: topic,
-                obj: obj,
-                highest_bid: highest_bid,
-                highest_bidder: highest_bidder,
-                publisher: publisher,
-                ttl: ttl
-            }    
-        }
-    pub fn to_json(&self) -> String {
-        serde_json::to_string(&self).unwrap()
-    }
+    pub topics: Arc<Mutex<Vec<(String, String)>>>,
 }
 
 /*
@@ -408,8 +407,12 @@ impl BidSession {
 
 /*
     TODO:
-        - periodically request blockchain
-        - pubsub topics/msgs alerts
+        - set sub/add_msg timeout on fail
+*/
+// NOTE: Pubsub GET (DHT) before any action
+/*
+    - Refresh --> Get PubSub
+    - Send_json --> Package PubSub as json {id: <>, name: <topic-name>, num_subs: <>, highest_bid: <>, highest_bidder: <>, TTL: <>, subscribed: <bool>}
 */
 impl App {
     pub fn new(addr: String, port: u16, bootappnode: AppNode) -> Self  {
@@ -419,7 +422,6 @@ impl App {
         let mut iter = 2;
         while !register {
             if iter == 5 { break; }
-            sleep(Duration::from_secs(NODETIMEOUT));
             register = appnode.join_network(bootappnode.clone());
             iter += 1;
         }
@@ -459,9 +461,10 @@ impl App {
                                 if diff > 0 {
                                     let mut topics = app.topics.lock()
                                         .expect("Error setting lock in topics vec!");
-                                    let topic = format!("{};{}", data.msg, ttl_str);
-                                    if !topics.contains(&topic) {
-                                        topics.push(topic);
+                                    let topic_split: Vec<&str> = data.msg.split(' ').collect();
+                                    let topic_entry = (topic_split[1].to_string(), ttl_str);
+                                    if !topics.contains(&topic_entry) {
+                                        topics.push(topic_entry);
                                     }
                                     drop(topics);
                                 }
@@ -475,6 +478,9 @@ impl App {
         });
     }
 
+    // TODO: 
+    //  - Retry mech 
+    //  - publish teardown (add block END_PUB ..)
     pub fn publish(&self, topic: String) -> bool {
         let ttl = Local::now() + chrono::Duration::minutes(15);
         let ttl_str = format!("{}", ttl);
@@ -485,13 +491,13 @@ impl App {
         );
         if self.pull_bk_add_block(data.clone()) {
             // TODO: error handeling
-            self.appnode.publish(topic, ttl);
+            self.appnode.publish(topic.clone(), ttl);
 
-            let topic = format!("{};{}", data.msg, ttl_str);
+            let topic_entry = (topic, ttl_str);
             let mut topics = self.topics.lock()
                 .expect("Error setting lock in topics vec!");
-            if !topics.contains(&topic) {
-                topics.push(topic);
+            if !topics.contains(&topic_entry) {
+                topics.push(topic_entry);
             }
             drop(topics);
 
@@ -506,35 +512,54 @@ impl App {
         false
     }
 
+    // TODO: - Retry mech
+    // Maybe add timeout before return (?)
     pub fn subscribe(&self, topic: String) -> bool {
         let topics = self.topics.lock()
             .expect("Error setting lock in topics vec!");
-        let topics_vec: Vec<String> = topics.clone().into_iter().collect();
+        let topics_vec: Vec<(String,String)> = topics.clone().into_iter().collect();
         drop(topics);
 
         let mut sub = false;
-        if !topics_vec.is_empty() {
-            for topic_state in topics_vec {
-                let topic_str: Vec<&str> = topic_state.split(";").collect();
-                if topic_str[0] == topic.clone() {
-                    let ttl: DateTime<Local> = topic_str[1].parse().unwrap();
-                    let time = Local::now();
-                    let diff = (ttl - time).num_minutes();
-                    if diff > 0 {
-                        sub = self.appnode.subscribe(topic.clone());
-                        break
-                    }
+        for topic_state in topics_vec {
+            if topic == topic_state.0 {
+                let ttl: DateTime<Local> = topic_state.1.parse().unwrap();
+                if (ttl - Local::now()).num_minutes() > 0 {
+                    sub = self.appnode.subscribe(topic);
+                    sleep(Duration::from_secs(NODETIMEOUT));
+                    break
                 }
             }
-        } else {
-            sub = self.appnode.subscribe(topic.clone());
-        }
-
-        if sub {
-            // TODO: call loop to receive msgs
         }
         
         sub
+    }
+
+    // TODO: - Retry mech
+    pub fn add_msg(&self, topic: String, msg: String) -> bool {
+        let mut status = false;
+
+        // bid X (only)
+        let msg_split: Vec<&str> = msg.split(' ').collect();
+        let raise: usize = msg_split[1].parse::<usize>().unwrap();
+        let res_msg = json!({"data": raise, "sender_addr": self.appnode.node.get_addr()});
+        status = self.appnode.add_msg(topic, res_msg.to_string());
+
+        sleep(Duration::from_secs(NODETIMEOUT));
+        status
+    }
+
+    pub fn get_topics(&self) -> Vec<(String, String)> {
+        let topics = self.topics.lock()
+            .expect("Error setting lock in topics");
+        let res = topics.clone();
+        drop(topics);
+        
+        res
+    }
+
+    pub fn get_json(&self, topic: String) -> Value {
+        self.appnode.get_pubsub_json(topic).clone()
     }
 
     fn pull_bk_add_block(&self, data: Data) -> bool {

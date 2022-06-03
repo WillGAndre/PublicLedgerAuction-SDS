@@ -2,9 +2,12 @@ use std::sync::{Arc, Mutex};
 use std::fmt::{Display, Formatter, Result};
 use base64::{encode};
 use chrono::{DateTime, Local};
+use sha2::{Sha256, Digest};
+use serde_json::{json, Value};
 
 #[derive(Debug, Clone)]
 pub struct PubSubInstance {
+    pub id: String,
     pub msgstack: Arc<Mutex<Vec<String>>>,
     pub substack: Arc<Mutex<Vec<String>>>,
     pub publisher: String,
@@ -19,18 +22,24 @@ pub struct PubSubInstance {
      - Improve print function(s).
 */
 
+// TODO:
+// TODO: Parse msgs as (BID X ; LEAVE)
 impl PubSubInstance {
-    pub fn new(publisher: String, msgstack: Option<Vec<String>>, substack: Option<Vec<String>>) -> Self {
+    pub fn new(id: Option<String>, publisher: String, msgstack: Option<Vec<String>>, substack: Option<Vec<String>>) -> Self {
         if msgstack != None && substack != None {
             return
                 Self {
+                    id: id.unwrap(),
                     msgstack: Arc::new(Mutex::new(msgstack.unwrap())),
                     substack: Arc::new(Mutex::new(substack.unwrap())),
                     publisher: publisher,
                     ttl: None
                 }
         }
+        let mut hasher = Sha256::new();
+        hasher.update(format!("{}",Local::now()).as_bytes());
         Self {
+            id: hex::encode(hasher.finalize()),
             msgstack: Arc::new(Mutex::new(Vec::new())),
             substack: Arc::new(Mutex::new(Vec::new())),
             publisher: publisher,
@@ -42,35 +51,26 @@ impl PubSubInstance {
         self.ttl = Some(ttl);
     }
 
-    pub fn verify_pubsub(&self) -> bool {
-        if self.ttl == None {
-            return false
-        }
-
-        let time = Local::now();
-        let diff = (self.ttl.unwrap() - time).num_minutes();
-        if diff > 0 {
-            return true
-        }
-        
-        false
-    }
-
-    // TODO: loop -> Relay msgs using substack (called when publish is performed)
-    /*
-        2 threads:
-            - Sub msg (receive msgs from subs)
-            - Sender (send msg only)
-        
-            (maintain concurrent list (state))
-    */
-
-    pub fn add_msg(&self, msg: String) {
+    // NOTE: Msgs should be of type "<raise_num>;<addr>"
+    pub fn add_msg(&self, msg: String) -> usize {
+        let id: &str = &self.id.clone()[..4];
         if self.verify_pubsub() {
-            let mut msgstack = self.msgstack.lock()
-                .expect("Error setting lock in msg stack");
-            msgstack.push(msg);
-            drop(msgstack)
+            if self.verify_msg(msg.clone()) {
+                let mut msgstack = self.msgstack.lock()
+                    .expect("Error setting lock in msg stack");
+                msgstack.push(msg);
+                drop(msgstack);
+                
+                0
+            } else {
+                println!("\t[PubSub({})]: Invalid msg", id);
+
+                1            
+            }
+        } else {
+            println!("\t[PubSub({})]: PubSub TTL expired or not set", id);
+
+            2
         }
     }
 
@@ -81,6 +81,31 @@ impl PubSubInstance {
             substack.push(sub);
             drop(substack)
         }
+    }
+
+    //  - verify msg (tuple -> (number to raise bid; sender addr))
+    // NOTE: Msgs should be of type "<raise_num>;<addr>"
+    pub fn verify_msg(&self, msg: String) -> bool {
+        let msgstack = self.msgstack.lock()
+            .expect("Error setting lock in msg stack");
+        
+        if msgstack.is_empty() || (msgstack.last().unwrap() == "" && msgstack.len() == 1){
+            drop(msgstack);
+            return true
+        } else {
+            let stack = msgstack.clone();
+            drop(msgstack);
+            let last_val: Value = serde_json::from_str(stack.last().unwrap()).unwrap();
+            let new_val: Value = serde_json::from_str(&msg).unwrap();
+
+            let last_raise: usize = last_val["data"].to_string().parse::<usize>().unwrap();
+            let new_raise: usize = new_val["data"].to_string().parse::<usize>().unwrap();
+
+            if new_raise > last_raise {
+                return true
+            }
+        }
+        false
     }
 
     pub fn verify_addr(&self, addr: String) -> bool {
@@ -98,7 +123,45 @@ impl PubSubInstance {
         false
     }
 
+    pub fn verify_pubsub(&self) -> bool {
+        if self.ttl == None {
+            return false
+        }
+
+        let time = Local::now();
+        let diff = (self.ttl.unwrap() - time).num_minutes();
+        if diff > 0 {
+            return true
+        }
+        
+        false
+    }
+
     // ---
+
+    // PubSub info sent to App -> used at cli
+    pub fn as_json(&self) -> Value {
+        let id: &str = &self.id.clone()[..4];
+        let msgstack = &self.msgstack.lock()
+            .expect("Error setting lock in msgstack");
+        let stack = msgstack;
+        drop(msgstack);
+        let last_entry: &String = stack.last().unwrap();
+        let last_entry_json: Value = serde_json::from_str(last_entry).unwrap();
+        let substack = &self.substack.lock()
+            .expect("Error setting lock in substack");
+        let num_subs = substack.len();
+        drop(substack);
+        json!(
+            {
+                "id": id,
+                "num_subs": num_subs,
+                "highest_bid": last_entry_json["data"],
+                "highest_bidder": last_entry_json["sender_addr"],
+                "TTL": format!("{}", self.ttl.unwrap()),
+            }
+        )
+    } 
 
     fn print_msgstack(&self) -> String {
         let mut msgstack_str = String::new();
@@ -144,6 +207,8 @@ impl PubSubInstance {
 
     fn encode_instance(&self) -> String {
         let mut str_to_encode = String::new();
+        str_to_encode.push_str(&self.id);
+        str_to_encode.push_str(";");
         str_to_encode.push_str(&self.publisher);
         str_to_encode.push_str(";");
         str_to_encode.push_str(&self.print_substack());

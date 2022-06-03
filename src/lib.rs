@@ -589,10 +589,26 @@ mod tests {
 
         appnode0.publish(String::from("test"));
 
-        println!("Appnode1 subscribe to test: {}", appnode1.subscribe(String::from("test")));
-        println!("Appnode2 subscribe to test: {}", appnode2.subscribe(String::from("test")));
+        //sleep(Duration::from_secs(NODETIMEOUT * 2));
 
-        sleep(Duration::from_secs(2));
+        let sub1 = appnode1.subscribe(String::from("test"));
+        let sub2 = appnode2.subscribe(String::from("test"));
+
+        //sleep(Duration::from_secs(NODETIMEOUT * 2));
+
+        if !sub1 {
+            appnode1.subscribe(String::from("test"));
+        }
+        if !sub2 {
+            appnode2.subscribe(String::from("test"));
+        }
+
+        appnode1.add_msg(String::from("test"), String::from("bid 100"));
+        appnode2.add_msg(String::from("test"), String::from("bid 200"));
+        appnode1.add_msg(String::from("test"), String::from("bid 150"));
+
+        // test print
+        // println!("{}", appnode0.get_json(String::from("test")));
 
         println!();
         println!();
