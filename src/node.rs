@@ -13,6 +13,11 @@ pub struct Node {
     pub port: u16,
 }
 
+/*
+    Node:
+    ID field serves as key, that is, array of bytes
+    with KEY_LEN size (128).
+*/
 impl Node {
     pub fn new(addr: String, port: u16) -> Self {
         let full = format!("{}:{}", addr, port);

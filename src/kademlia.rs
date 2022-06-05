@@ -93,6 +93,9 @@ impl RoutingTable {
      *          }
      *      }
      *      8 * KEY_LEN - 1
+     * 
+     * (N_KBUCKETS - 1) - (8 * i) , offset 8 in 8 buckets (there are N_KBUCKETS --> multipl of 8)
+     * (    || + shift), offset other buckets (8 bytes thus 8 possible shifts)
     */
     fn get_bucket_index(&self, key: &Key) -> usize {
         let d = Distance::new(&self.node.id, key);
@@ -233,7 +236,7 @@ impl KademliaInstance {
 
         kad.clone().requests_handler(rpc_receiver);
         
-        // TODO: verify if needed
+        // Populate routing table with our instance
         kad.find_node(&node.id);
 
         // republish every <key,value> every timeout
@@ -673,13 +676,14 @@ impl KademliaInstance {
                 let mut hashmap = self.hashmap.lock()
                     .expect("");
                 hashmap.insert(key.to_string(), value.to_string());
+                drop(hashmap);
                 (KademliaResponse::Ping, request)
             },
             KademliaRequest::QueryNode(ref id) => {
                 let routingtable = self.routingtable.lock()
                     .expect("Error setting lock in routing table");
-
                 let result = routingtable.get_bucket_nodes(id);
+                drop(routingtable);
 
                 (KademliaResponse::QueryNode(result), request)
             },
@@ -696,8 +700,9 @@ impl KademliaInstance {
                     None => {
                         let routingtable = self.routingtable.lock()
                             .expect("Error setting lock in routing table");
-                        
-                        (KademliaResponse::QueryValue(QueryValueResult::Nodes(routingtable.get_bucket_nodes(&key))), request)
+                        let bucket_nodes = routingtable.get_bucket_nodes(&key);
+                        drop(routingtable);
+                        (KademliaResponse::QueryValue(QueryValueResult::Nodes(bucket_nodes)), request)
                     }
                 }
             },
@@ -705,13 +710,19 @@ impl KademliaInstance {
             KademliaRequest::AddBlock(ref block) => {
                 let mut blockchain = self.blockchain.lock()
                     .expect("Error setting lock in local blockchain");
-                blockchain.add_block(block.clone());
-                (KademliaResponse::Ping, request)
+                let res = blockchain.add_block(block.clone());
+                drop(blockchain);
+                if res {
+                    return (KademliaResponse::Ping, request)
+                }
+                (KademliaResponse::PingUnableProcReq, request)
             },
             KademliaRequest::QueryLocalBlockChain => {
                 let blockchain = self.blockchain.lock()
                     .expect("Error setting lock in local blockchain");
-                (KademliaResponse::QueryLocalBlockChain(blockchain.blocks.clone()), request)
+                let blocks = blockchain.blocks.clone();
+                drop(blockchain);
+                (KademliaResponse::QueryLocalBlockChain(blocks), request)
             },
 
             KademliaRequest::NodeJoin(ref node) => {
@@ -719,7 +730,7 @@ impl KademliaInstance {
                 let mut routingtable = self.routingtable.lock()
                     .expect("Error setting lock in routing table");
                 routingtable.update_routing_table(node.clone());
-                
+                drop(routingtable);
                 (KademliaResponse::NodeJoin(nodes), request)
             },
         }
@@ -757,6 +768,8 @@ impl KademliaInstance {
     pub fn print_blockchain(&self) {
         let blockchain = self.blockchain.lock()
             .expect("Error setting lock in local blockchain"); // TODO: drop
-        println!("{:?}", blockchain)
+        let blocks = blockchain.blocks.clone();
+        drop(blockchain);
+        println!("{:?}", blocks)
     }
 }

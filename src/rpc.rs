@@ -37,6 +37,7 @@ pub enum KademliaRequest {
 #[derive(Serialize, Deserialize, Debug)]
 pub enum KademliaResponse {
     Ping,
+    PingUnableProcReq,
     QueryNode(Vec<NodeWithDistance>),
     QueryValue(QueryValueResult),
 
@@ -218,6 +219,7 @@ impl Rpc {
     }
 }
 
+// Full RPC proc, called from kademlia to send KademliaRequests
 pub fn full_rpc_proc(rpc: &Rpc, request: KademliaRequest, node: Node) -> Option<KademliaResponse> {
     rpc.handle_request(request, node).recv()
         .expect("Error receiving response from rpc")

@@ -106,13 +106,20 @@ impl Blockchain {
         self.blocks.push(genesis_block);
     }
 
-    pub fn add_block(&mut self, block: Block) {
+    pub fn add_block(&mut self, block: Block) -> bool {
         let prev_block = self.blocks.last().expect("At least one block");
         if self.is_block_valid(&block, prev_block) {
             self.blocks.push(block);
+            return true
         } else {
-            eprint!("unable to add block - invalid")
+            // error msg
+            // eprint!("unable to add block - invalid")
         }
+        false
+    }
+
+    pub fn remove_last_block(&mut self) {
+        self.blocks.pop();
     }
 
     fn is_block_valid(&self, block: &Block, prev_block: &Block) -> bool {
@@ -167,8 +174,33 @@ impl Blockchain {
         }
     }
 
+    pub fn get_diff_from_chains(&self, local: Vec<Block>, remote: Vec<Block>) -> Vec<Block> {
+        let is_local_valid = self.is_chain_valid(&local);
+        let is_remote_valid = self.is_chain_valid(&remote);
+        let mut res: Vec<Block> = Vec::new();
+
+        if is_local_valid && is_remote_valid {
+            let local_len = local.len();
+            let remote_len = remote.len();
+            if local_len > remote_len {
+                res = local.clone().drain((local_len - (local_len - remote_len) - 1)..).collect()
+            } else if remote_len > local_len {
+                res = remote.clone().drain((remote_len - (remote_len - local_len) - 1)..).collect()
+            }
+            // TODO: what if eq
+        }  
+        
+        res
+    }
+
     pub fn string(&self) -> String {
         self.to_string()
+    }
+    
+    pub fn hash(&self) -> Vec<u8> {
+        let mut hasher = Sha256::new();
+        hasher.update(self.to_string().as_bytes());
+        hasher.finalize().as_slice().to_owned()
     }
 }
 

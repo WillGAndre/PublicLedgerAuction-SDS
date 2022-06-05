@@ -1,0 +1,24 @@
+[package]
+name = "auctions_cli"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+lib = { path = "../../src/lib.rs" }
+
+[dependencies]
+crossterm = { version = "0.23.2", features = [ "serde" ] }
+serde = {version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+rand = { version = "*", default-features = false, features = ["std"] }
+tui = { version = "0.18", features = ['crossterm', 'serde'] }
+tui-input = "*"
+thiserror = "1.0"
+log = "*"
+rust-crypto = "*"
+hex = "*"
+sha2 = "*"
+crossbeam-channel = "*"
+base64 = "*"
