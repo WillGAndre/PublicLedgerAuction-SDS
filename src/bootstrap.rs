@@ -180,8 +180,8 @@ impl AppNode {
     }
 
     // register method - arg: AppNode, Note: Added node timeout
-    pub fn join_network(&self, bootnode: AppNode) -> bool {
-        let find_node = full_rpc_proc(&self.kademlia.rpc, KademliaRequest::NodeJoin(self.node.clone()), bootnode.node.clone());
+    pub fn join_network(&self, bootnode: Node) -> bool {
+        let find_node = full_rpc_proc(&self.kademlia.rpc, KademliaRequest::NodeJoin(self.node.clone()), bootnode.clone());
         
         if let Some(KademliaResponse::NodeJoin(nodes)) = find_node {
             if !nodes.is_empty() {
@@ -195,7 +195,7 @@ impl AppNode {
                     }
                 }
                 
-                let query_blockchain = full_rpc_proc(&self.kademlia.rpc, KademliaRequest::QueryLocalBlockChain, bootnode.node.clone());
+                let query_blockchain = full_rpc_proc(&self.kademlia.rpc, KademliaRequest::QueryLocalBlockChain, bootnode.clone());
                 if let Some(KademliaResponse::QueryLocalBlockChain(blocks)) = query_blockchain {
                     let mut blockchain = self.kademlia.blockchain.lock()
                         .expect("Error setting lock in local blockchain");
@@ -213,7 +213,7 @@ impl AppNode {
                     blockchain.add_block(block.clone());
                     drop(blockchain);
 
-                    let add_block = full_rpc_proc(&self.kademlia.rpc, KademliaRequest::AddBlock(block), bootnode.node.clone());
+                    let add_block = full_rpc_proc(&self.kademlia.rpc, KademliaRequest::AddBlock(block), bootnode.clone());
                     if let Some(KademliaResponse::Ping) = add_block {
                         println!("\t[AN{}]: Added Block info ({})", self.node.port, data.to_json());
                         sleep(Duration::from_secs(NODETIMEOUT));
@@ -368,7 +368,7 @@ impl Data {
 #[derive(Clone)]
 pub struct App {
     pub appnode: AppNode,
-    pub bootappnode: AppNode,
+    pub bootappnode: Node,
     pub topics: Arc<Mutex<Vec<(String, String)>>>,
 }
 
@@ -415,9 +415,10 @@ pub struct App {
     - Send_json --> Package PubSub as json {id: <>, name: <topic-name>, num_subs: <>, highest_bid: <>, highest_bidder: <>, TTL: <>, subscribed: <bool>}
 */
 impl App {
-    pub fn new(addr: String, port: u16, bootappnode: AppNode) -> Self  {
-        let bootnode = bootappnode.node.clone();
-        let appnode = AppNode::new(addr, port, Some(bootnode));
+    pub fn new(addr: String, port: u16, bootappnode: Node) -> Self  {
+        //let bootnode = bootappnode.node.clone();
+        let node = bootappnode.clone();
+        let appnode = AppNode::new(addr, port, Some(node));
         let mut register = appnode.join_network(bootappnode.clone());
         let mut iter = 2;
         while !register {
@@ -441,7 +442,7 @@ impl App {
         spawn(move || {
             loop {
                 sleep(Duration::from_secs(NODETIMEOUT));
-                let query_blockchain = full_rpc_proc(&app.appnode.kademlia.rpc, KademliaRequest::QueryLocalBlockChain, app.bootappnode.node.clone());
+                let query_blockchain = full_rpc_proc(&app.appnode.kademlia.rpc, KademliaRequest::QueryLocalBlockChain, app.bootappnode.clone());
                 if let Some(KademliaResponse::QueryLocalBlockChain(blocks)) = query_blockchain {
                     let mut blockchain = app.appnode.kademlia.blockchain.lock()
                         .expect("Error setting lock in local blockchain");
@@ -563,7 +564,7 @@ impl App {
     }
 
     fn pull_bk_add_block(&self, data: Data) -> bool {
-        let query_blockchain = full_rpc_proc(&self.appnode.kademlia.rpc, KademliaRequest::QueryLocalBlockChain, self.bootappnode.node.clone());
+        let query_blockchain = full_rpc_proc(&self.appnode.kademlia.rpc, KademliaRequest::QueryLocalBlockChain, self.bootappnode.clone());
         if let Some(KademliaResponse::QueryLocalBlockChain(blocks)) = query_blockchain {
             let mut blockchain = self.appnode.kademlia.blockchain.lock()
                 .expect("Error setting lock in local blockchain");
@@ -576,7 +577,7 @@ impl App {
             blockchain.add_block(block.clone());
             drop(blockchain);
 
-            let add_block = full_rpc_proc(&self.appnode.kademlia.rpc, KademliaRequest::AddBlock(block), self.bootappnode.node.clone());
+            let add_block = full_rpc_proc(&self.appnode.kademlia.rpc, KademliaRequest::AddBlock(block), self.bootappnode.clone());
             if let Some(KademliaResponse::Ping) = add_block {
                 println!("\t[AN{}]: Added Block info ({})", self.appnode.node.port, data.to_json());
             } else if let Some(KademliaResponse::PingUnableProcReq) = add_block {

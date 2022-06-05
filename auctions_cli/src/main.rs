@@ -110,11 +110,15 @@ fn main() -> Result<(), Box<dyn Error>> {//Box<dynapp.input_mode = InputMode::To
     // app
     let boot = Bootstrap::new();
     Bootstrap::full_bk_sync(boot.clone());
-    let app = App::new(aux::get_ip().unwrap(), 1342, boot.nodes[0].clone());
+
+    let app = App::new(aux::get_ip().unwrap(), 1342, boot.nodes[0].node.clone());
     app.publish(String::from("test"));
 
-    let app2 = App::new(aux::get_ip().unwrap(), 1343, boot.nodes[0].clone());
-    app2.publish(String::from("test2"));
+    // OTHER MACHINE
+    // let node = Node::new(String::from("192.168.1.122"), 1333);
+
+    // let app = App::new(aux::get_ip().unwrap(), 1343, node.clone());
+    // app.publish(String::from("test2"));
 
 
     let mut stdout = io::stdout();
