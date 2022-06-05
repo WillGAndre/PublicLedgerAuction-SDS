@@ -136,7 +136,7 @@ impl AppNode {
         let mut pubsub = self.pubsub.clone();
         pubsub.set_ttl(ttl);
         self.kademlia.insert(topic.clone(), pubsub.to_string());
-        println!("\t[AN{}]: Published topic (in DHT): {}; Exp: {}", self.node.port, topic, ttl)
+        //println!("\t[AN{}]: Published topic (in DHT): {}; Exp: {}", self.node.port, topic, ttl)
         // TODO: Maybe add block when publish is triggered, set ttl for pubsub instance 
     }
 
@@ -149,7 +149,7 @@ impl AppNode {
             let pubsub_ins = self.get_pubsub_instance(pubsub_str).unwrap();
             pubsub_ins.add_sub(self.node.get_addr());
             self.kademlia.insert(topic.clone(), pubsub_ins.to_string());
-            println!("\t[AN{}]: subscribed to topic: {}", self.node.port, topic);
+            //println!("\t[AN{}]: subscribed to topic: {}", self.node.port, topic);
             return true
         }
         
@@ -170,7 +170,7 @@ impl AppNode {
                 let status = pubsub_ins.add_msg(msg);
                 if status == 0 {
                     self.kademlia.insert(topic.clone(), pubsub_ins.to_string());
-                    println!("\t[AN{}]: added msg to topic: {}", self.node.port, topic);
+                    //println!("\t[AN{}]: added msg to topic: {}", self.node.port, topic);
                     return true
                 }
             }
@@ -312,7 +312,7 @@ impl AppNode {
                     "num_subs": json["num_subs"],
                     "highest_bid": json["highest_bid"],
                     "highest_bidder": json["highest_bidder"],
-                    "TTL": json["TTL"],
+                    "ttl": json["ttl"],
                     "subscribed": pubsub_ins.verify_addr(self.node.get_addr())
                 }
             )

@@ -11,22 +11,22 @@ pub mod pubsub;
 **/
 
 // 20 bytes (160 bits)
-const KEY_LEN: usize = 20;
+pub const KEY_LEN: usize = 20;
 
 // Number of buckets
-const N_KBUCKETS: usize = KEY_LEN * 8;
+pub const N_KBUCKETS: usize = KEY_LEN * 8;
 
 // Number of contacts in kbucket
-const K_PARAM: usize = 20;
+pub const K_PARAM: usize = 20;
 
 // ALPHA - degree of parallelism
-const ALPHA: usize = 3;
+pub const ALPHA: usize = 3;
 
 // Timeout for Kademlia replication events
-const TREPLICATE: u64 = 3600; 
+pub const TREPLICATE: u64 = 3600; 
 
 // Timeout in secs
-const NODETIMEOUT: u64 = 1;
+pub const NODETIMEOUT: u64 = 1;
 
 #[cfg(test)]
 mod tests {

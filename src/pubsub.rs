@@ -74,6 +74,7 @@ impl PubSubInstance {
         }
     }
 
+    // TODO: handle concurrent subs
     pub fn add_sub(&self, sub: String) {
         if self.verify_pubsub() && !self.verify_addr(sub.clone()) {
             let mut substack = self.substack.lock()
@@ -147,7 +148,11 @@ impl PubSubInstance {
         let stack = msgstack;
         drop(msgstack);
         let last_entry: &String = stack.last().unwrap();
-        let last_entry_json: Value = serde_json::from_str(last_entry).unwrap();
+        let mut last_entry_json: Value = json!({"data":0,"sender_addr":"unknown"});
+        if last_entry != ""
+        {
+            last_entry_json = serde_json::from_str(last_entry).unwrap();
+        }
         let substack = &self.substack.lock()
             .expect("Error setting lock in substack");
         let num_subs = substack.len();
@@ -158,7 +163,7 @@ impl PubSubInstance {
                 "num_subs": num_subs,
                 "highest_bid": last_entry_json["data"],
                 "highest_bidder": last_entry_json["sender_addr"],
-                "TTL": format!("{}", self.ttl.unwrap()),
+                "ttl": format!("{}", self.ttl.unwrap()),
             }
         )
     } 

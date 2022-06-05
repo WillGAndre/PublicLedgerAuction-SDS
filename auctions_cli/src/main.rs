@@ -1,60 +1,76 @@
 use chrono::prelude::*;
 use crossterm::{
-    event::{self, Event as CEvent, KeyCode},
-    terminal::{disable_raw_mode, enable_raw_mode},
+    event::{self, Event, KeyCode, DisableMouseCapture, EnableMouseCapture},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen,
+        LeaveAlternateScreen,},
 };
+
 use rand::{distributions::Alphanumeric, prelude::*};
 use serde::{Deserialize, Serialize};
+//use serde_json::json;
 use std::fs;
 use std::io;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
+use std::{error::Error};
 use thiserror::Error;
 use tui::{
-    backend::CrosstermBackend,
+    backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::{Span, Spans},
+    text::{Span, Spans, Text},
     widgets::{
         Block, BorderType, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, Tabs,
     },
-    Terminal,
+    Frame, Terminal,
 };
+use tui_input::backend::crossterm as input_backend;
+use tui_input::Input;
 
 
-const DB_PATH: &str = "./data/db.json";
-
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error("error reading the DB file: {0}")]
-    ReadDBError(#[from] io::Error),
-    #[error("error parsing the DB file: {0}")]
-    ParseDBError(#[from] serde_json::Error),
-}
-
-// input event
-enum Event<I> {
-    Input(I),
-    Tick,
-}
+#[path = "../../src/aux.rs"]
+mod aux;
+#[path = "../../src/blockchain.rs"]
+mod blockchain;
+#[path = "../../src/bootstrap.rs"]
+mod bootstrap;
+#[path = "../../src/kademlia.rs"]
+mod kademlia;
+#[path = "../../src/lib.rs"]
+mod lib;
+#[path = "../../src/node.rs"]
+mod node;
+#[path = "../../src/pubsub.rs"]
+mod pubsub;
+#[path = "../../src/rpc.rs"]
+mod rpc;
+use crate::lib::{NODETIMEOUT, K_PARAM, N_KBUCKETS, KEY_LEN, ALPHA, TREPLICATE};
+use crate::bootstrap::{App, Bootstrap};
 
 #[derive(Serialize, Deserialize, Clone)]
 struct Topic {
-    id: usize,
-    name: String,
-    //item: String,
-    num_subs: usize,
+    ttl: String,
     highest_bid: usize,
     highest_bidder: String,
-    created_at: DateTime<Utc>,
-    ends_at: DateTime<Utc>,
+    id: String,
+    name: String,
+    num_subs: usize,
+    subscribed: bool
+}
+
+enum InputMode {
+    Home,
+    Topics,
+    Editing,
 }
 
 #[derive(Copy, Clone, Debug)]
 enum MenuItem {
     Home,
     Topics,
+    //Input,
 }
 
 impl From<MenuItem> for usize {
@@ -62,50 +78,87 @@ impl From<MenuItem> for usize {
         match input {
             MenuItem::Home => 0,
             MenuItem::Topics => 1,
+            //MenuItem::Input => 2,
         }
     }
 }
 
+/// App holds the state of the application
+struct AppCli {
+    /// Current value of the input box
+    input: Input,
+    /// Current input mode
+    input_mode: InputMode,
+    /// History of recorded messages
+    messages: Vec<String>,
+}
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    enable_raw_mode().expect("can run in raw mode"); // no need to wait for an 'Enter' from user
-
-    let (tx, rx) = mpsc::channel();
-    let tick_rate = Duration::from_millis(200);
-    thread::spawn(move || {
-        let mut last_tick = Instant::now();
-        loop {
-            let timeout = tick_rate
-                .checked_sub(last_tick.elapsed())
-                .unwrap_or_else(|| Duration::from_secs(0));
-
-            if event::poll(timeout).expect("poll works") {
-                if let CEvent::Key(key) = event::read().expect("can read events") {
-                    tx.send(Event::Input(key)).expect("can send events");
-                }
-            }
-
-            if last_tick.elapsed() >= tick_rate {
-                if let Ok(_) = tx.send(Event::Tick) {
-                    last_tick = Instant::now();
-                }
-            }
+impl Default for AppCli {
+    fn default() -> AppCli {
+        AppCli {
+            input: Input::default(),
+            input_mode: InputMode::Home,
+            messages: Vec::new(),
         }
-    });
+    }
+}
 
-    let stdout = io::stdout();
+fn main() -> Result<(), Box<dyn Error>> {//Box<dynapp.input_mode = InputMode::Topics; Error>> {
+    // setup terminal
+    enable_raw_mode()?;
+
+    // app
+    let boot = Bootstrap::new();
+    Bootstrap::full_bk_sync(boot.clone());
+    let app = App::new(aux::get_ip().unwrap(), 1342, boot.nodes[0].clone());
+    app.publish(String::from("test"));
+
+    let app2 = App::new(aux::get_ip().unwrap(), 1343, boot.nodes[0].clone());
+    app2.publish(String::from("test2"));
+
+
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-    terminal.clear()?;
 
-    let menu_titles = vec!["Home", "Topics", "Refresh", "Subscribe", "Bid", "Quit"];
+    // create app and run it
+    let appcli = AppCli::default();
+    let res = run_app(&mut terminal, appcli, app);
+
+    // restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+
+    if let Err(err) = res {
+        println!("{:?}", err)
+    }
+
+    Ok(())
+}
+
+fn run_app<B: Backend>(
+    terminal: &mut Terminal<B>,
+    mut appcli: AppCli,
+    mut app: App,
+) -> io::Result<()> {
+
+    let menu_titles = vec!["Home", "Topics", "Publish", "Subscribe", "Bid", "Quit"];
     let mut active_menu_item = MenuItem::Home;
     let mut topic_list_state = ListState::default();
     topic_list_state.select(Some(0));
 
+    let mut flag = 0; // 0=none, 1=bid, 2=publish
+
     loop {
-        terminal.draw(|rect| {
-            let size = rect.size();
+        //terminal.draw(|f| ui(f, &mut app))?;
+        
+        terminal.draw(|f| {            
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(2)
@@ -117,7 +170,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ]
                     .as_ref(),
                 )
-                .split(size);
+                .split(f.size());
 
             let menu = menu_titles
                 .iter()
@@ -127,11 +180,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Span::styled(
                             first,
                             Style::default()
-                                .fg(Color::Yellow)
+                                .fg(Color::LightBlue)
                                 .add_modifier(Modifier::UNDERLINED),
                         ),
                         Span::styled(rest, Style::default().fg(Color::White)),
-                    ])
+                        ])
                 })
                 .collect();
 
@@ -139,12 +192,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .select(active_menu_item.into())
                 .block(Block::default().title("Menu").borders(Borders::ALL))
                 .style(Style::default().fg(Color::White))
-                .highlight_style(Style::default().fg(Color::Yellow))
+                .highlight_style(Style::default().fg(Color::LightBlue))
                 .divider(Span::raw("|"));
 
-            rect.render_widget(tabs, chunks[0]);
+            f.render_widget(tabs, chunks[0]);
+            
             match active_menu_item {
-                MenuItem::Home => rect.render_widget(render_home(), chunks[1]),
+                MenuItem::Home => f.render_widget(render_home(), chunks[1]),
                 MenuItem::Topics => {
                     let topics_chunk = Layout::default()
                         .direction(Direction::Horizontal)
@@ -152,58 +206,157 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             [Constraint::Percentage(20), Constraint::Percentage(80)].as_ref(),
                         )
                         .split(chunks[1]);
-                    let (left, right) = render_topics(&topic_list_state);
-                    rect.render_stateful_widget(left, topics_chunk[0], &mut topic_list_state);
-                    rect.render_widget(right, topics_chunk[1]);
+                    let (left, right) = render_topics(&topic_list_state, &app);
+                    f.render_stateful_widget(left, topics_chunk[0], &mut topic_list_state);
+                    f.render_widget(right, topics_chunk[1]);
+                },
+                //MenuItem::Input => f.render_widget(render_home(), chunks[1]),
+            }
+
+            let width = chunks[0].width.max(3) - 3; // keep 2 for borders and 1 for cursor
+            let scroll = (appcli.input.cursor() as u16).max(width) - width;
+            
+            
+            match appcli.input_mode {
+                InputMode::Home =>
+                    // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
+                    {}
+                InputMode::Topics =>
+                    // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
+                    {}
+
+                InputMode::Editing => {
+                    let mut title = "Input";
+                    if flag == 1 {
+                        title = "Bid (ex: <value>)";
+                    } else if flag == 2 {
+                        title = "Publish (ex: <topic_name>:<initial_value>)";
+                    }
+
+                    let input = Paragraph::new(appcli.input.value())
+                        .style(match appcli.input_mode {
+                            InputMode::Home => Style::default(),
+                            InputMode::Topics => Style::default(),
+                            InputMode::Editing => Style::default().fg(Color::Green),
+                        })
+                        .scroll((0, scroll))
+                        .block(Block::default().borders(Borders::ALL).title(title));
+                    f.render_widget(input, chunks[2]);
+                    // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
+                    f.set_cursor(
+                        // Put cursor past the end of the input text
+                        chunks[2].x + (appcli.input.cursor() as u16).min(20) + 1,
+                        // Move one line down, from the border to the input line
+                        chunks[2].y + 1,
+                    )
                 }
             }
-        })?;
 
-        match rx.recv()? {
-            Event::Input(event) => match event.code {
-                KeyCode::Char('q') => {
-                    disable_raw_mode()?;
-                    terminal.show_cursor()?;
-                    break;
-                }
-                KeyCode::Char('h') => active_menu_item = MenuItem::Home,
-                KeyCode::Char('t') => active_menu_item = MenuItem::Topics,
-                KeyCode::Char('r') => {
-                    //refresh_topic_info().expect("refresh topic info");
-                }
-                KeyCode::Char('s') => {
-                    //subscribe_topic(&mut topic_list_state).expect("can subscribe on topic");
-                }
-                KeyCode::Char('b') => {
-                    bid_topic(&mut topic_list_state).expect("can bid on topic");
-                }
-                KeyCode::Down => {
-                    if let Some(selected) = topic_list_state.selected() {
-                        let amount_topics = read_db().expect("can fetch topic list").len();
-                        if selected >= amount_topics - 1 {
-                            topic_list_state.select(Some(0));
-                        } else {
-                            topic_list_state.select(Some(selected + 1));
+        
+        });
+        
+        
+        //////////////////////////////////////////////////////////////////////////////////////
+        //////////////////////////////////////////////////////////////////////////////////////
+        //////////////////////////////////////////////////////////////////////////////////////
+        //////////////////////////////////////////////////////////////////////////////////////
+        
+        
+        
+        if let Event::Key(key) = event::read()? {
+            match appcli.input_mode {
+                InputMode::Home => match key.code {
+                    KeyCode::Char('t') => { // show topics menu
+                        active_menu_item = MenuItem::Topics;
+                        appcli.input_mode = InputMode::Topics;
+                    }
+                    KeyCode::Char('q') => { // quit cli app
+                        return Ok(());
+                    }
+                    _ => {}
+                },
+                InputMode::Topics => match key.code {
+                    KeyCode::Char('h') => { // show home menu
+                        active_menu_item = MenuItem::Home;
+                        appcli.input_mode = InputMode::Home;
+                    }
+                    KeyCode::Char('s') => { // subscribe selected topic
+                        let result = subscribe_topic(&mut topic_list_state, &app);
+                    }
+                    KeyCode::Char('p') => { // publish new topic
+                        flag = 2;
+                        appcli.input_mode = InputMode::Editing;
+                    }
+                    KeyCode::Char('b') => { // bid on selected topic
+                        if let Some(selected) = topic_list_state.selected() {
+                            let topic_list = get_topics(&app).expect("can fetch topic list");
+                            let selected_topic = topic_list
+                                .get(
+                                    topic_list_state
+                                        .selected()
+                                        .expect("there is always a selected topic"),
+                                )
+                                .expect("exists")
+                                .clone();
+
+                            if selected_topic.subscribed {
+                                flag = 1;
+                                appcli.input_mode = InputMode::Editing;
+                            }
+                        }
+                        
+                    }
+                    KeyCode::Char('q') => { // quit cli app
+                        return Ok(());
+                    }
+                    KeyCode::Down => { // navigate in topics menu
+                        if let Some(selected) = topic_list_state.selected() {
+                            let amount_topics = get_topics(&app).expect("can fetch topic list").len();
+                            if selected >= amount_topics - 1 {
+                                topic_list_state.select(Some(0));
+                            } else {
+                                topic_list_state.select(Some(selected + 1));
+                            }
+                            use serde_json::json;  }
+                    }
+                    KeyCode::Up => {
+                        if let Some(selected) = topic_list_state.selected() {
+                            let amount_topics = get_topics(&app).expect("can fetch topic list").len();//get_topics().expect("can fetch topic list").len();
+                            if selected > 0 {
+                                topic_list_state.select(Some(selected - 1));
+                            } else {
+                                topic_list_state.select(Some(amount_topics - 1));
+                            }
                         }
                     }
-                }
-                KeyCode::Up => {
-                    if let Some(selected) = topic_list_state.selected() {
-                        let amount_topics = read_db().expect("can fetch topic list").len();
-                        if selected > 0 {
-                            topic_list_state.select(Some(selected - 1));
-                        } else {
-                            topic_list_state.select(Some(amount_topics - 1));
-                        }
+                    _ => {}
+                },
+                InputMode::Editing => match key.code {
+                    KeyCode::Enter => {
+                        appcli.messages.push(appcli.input.value().into());
+                        appcli.input.reset();
+
+                        if flag == 1 {
+                            let result = bid_topic(&mut topic_list_state, &appcli.messages, &app).expect("can bid on topic");
+                        } 
+                        else if flag == 2 {
+                            let result = publish_topic(&appcli.messages, &app);
+                        } 
+                        
+                        appcli.messages.clear();
+                        appcli.input_mode = InputMode::Topics;
                     }
-                }
-                _ => {}
-            },
-            Event::Tick => {}
+                    KeyCode::Esc => {
+                        appcli.input_mode = InputMode::Topics;
+                    }
+                    _ => {
+                        input_backend::to_input_request(Event::Key(key))
+                            .and_then(|req| appcli.input.handle(req));
+                    }
+                },
+            }
         }
     }
-
-    Ok(())
 }
 
 fn render_home<'a>() -> Paragraph<'a> {
@@ -215,16 +368,49 @@ fn render_home<'a>() -> Paragraph<'a> {
         Spans::from(vec![Span::raw("")]),
         Spans::from(vec![Span::styled(
             "Auctions CLI",
-            Style::default().fg(Color::LightBlue),
+            Style::default().fg(Color::Blue),
         )]),
         Spans::from(vec![Span::raw("")]),
-        Spans::from(vec![Span::raw("Press 't' to access topics")]),
         Spans::from(vec![Span::raw("")]),
-        Spans::from(vec![Span::raw("Press 'r' to refresh topics")]),
         Spans::from(vec![Span::raw("")]),
-        Spans::from(vec![Span::raw("Press 's' to subscribe topic")]),
+        Spans::from(vec![Span::styled(
+            "Commands",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )]),
         Spans::from(vec![Span::raw("")]),
-        Spans::from(vec![Span::raw("Press 'b' to place new bid")]),
+        Spans::from(vec![Span::raw("       Press 't' to access topics       ")]),
+        Spans::from(vec![Span::raw("")]),
+        Spans::from(vec![Span::raw("Press 'p' to publish topics (Input mode)")]),
+        Spans::from(vec![Span::raw("")]),
+        Spans::from(vec![Span::raw("       Press 's' to subscribe topic      ")]),
+        Spans::from(vec![Span::raw("")]),
+        Spans::from(vec![Span::raw(" Press 'b' to place new bid (Input mode)  ")]),
+        Spans::from(vec![Span::raw("")]),
+        Spans::from(vec![Span::raw("Input mode -> (Press 'Enter' to submit or 'Esc' to exit mode)")]),
+        Spans::from(vec![Span::raw("")]),
+        Spans::from(vec![Span::raw("")]),
+        Spans::from(vec![Span::raw("")]),
+        Spans::from(vec![Span::raw("")]),
+        Spans::from(vec![Span::styled(
+            "Developed by:",
+            Style::default()
+                .fg(Color::LightBlue)
+                .add_modifier(Modifier::BOLD),
+        )]),
+        Spans::from(vec![Span::styled(
+            "Guilherme Pereira, up201809622",
+            Style::default().fg(Color::LightBlue),
+        )]),
+        Spans::from(vec![Span::styled(
+            "José Simões, up201804931",
+            Style::default().fg(Color::LightBlue),
+        )]),
+        Spans::from(vec![Span::styled(
+            "Tiago Garcia, up202103778",
+            Style::default().fg(Color::LightBlue),
+        )]),
     ])
     .alignment(Alignment::Center)
     .block(
@@ -237,19 +423,27 @@ fn render_home<'a>() -> Paragraph<'a> {
     home
 }
 
-fn render_topics<'a>(topic_list_state: &ListState) -> (List<'a>, Table<'a>) {
+fn render_topics<'a>(topic_list_state: &ListState, app: &App) -> (List<'a>, Table<'a>) {
     let topics = Block::default()
         .borders(Borders::ALL)
         .style(Style::default().fg(Color::White))
         .title("Topics")
         .border_type(BorderType::Plain);
 
-    let topic_list = read_db().expect("can fetch topic list");
+    // get topics list
+    let topic_list = get_topics(&app).expect("can fetch topic list");
+
     let items: Vec<_> = topic_list
         .iter()
         .map(|topic| {
+            let mut subscribed = "";
+            if topic.subscribed.clone() == true
+            {
+                subscribed = " [Subscribed]";
+            }
+
             ListItem::new(Spans::from(vec![Span::styled(
-                topic.name.clone(),
+                topic.name.clone() + subscribed,
                 Style::default(),
             )]))
         })
@@ -266,21 +460,21 @@ fn render_topics<'a>(topic_list_state: &ListState) -> (List<'a>, Table<'a>) {
 
     let list = List::new(items).block(topics).highlight_style(
         Style::default()
-            .bg(Color::Yellow)
+            .bg(Color::LightBlue)
             .fg(Color::Black)
             .add_modifier(Modifier::BOLD),
     );
 
     let topic_detail = Table::new(vec![Row::new(vec![
-        Cell::from(Span::raw(selected_topic.num_subs.to_string())),
+        Cell::from(Span::raw(selected_topic.ttl.to_string())),
         Cell::from(Span::raw(selected_topic.highest_bid.to_string())),
         Cell::from(Span::raw(selected_topic.highest_bidder)),
-        Cell::from(Span::raw(selected_topic.created_at.to_string())),
-        Cell::from(Span::raw(selected_topic.ends_at.to_string())),
+        Cell::from(Span::raw(selected_topic.num_subs.to_string())),
+        Cell::from(Span::raw(selected_topic.subscribed.to_string())),
     ])])
     .header(Row::new(vec![
         Cell::from(Span::styled(
-            "Subs",
+            "TTL",
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Cell::from(Span::styled(
@@ -292,11 +486,11 @@ fn render_topics<'a>(topic_list_state: &ListState) -> (List<'a>, Table<'a>) {
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Cell::from(Span::styled(
-            "Created at",
+            "Subscribers",
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Cell::from(Span::styled(
-            "Ends at",
+            "Subscribed",
             Style::default().add_modifier(Modifier::BOLD),
         )),
     ]))
@@ -308,81 +502,116 @@ fn render_topics<'a>(topic_list_state: &ListState) -> (List<'a>, Table<'a>) {
             .border_type(BorderType::Plain),
     )
     .widths(&[
-        Constraint::Percentage(5),
+        Constraint::Percentage(25),
+        Constraint::Percentage(10),
+        Constraint::Percentage(15),
         Constraint::Percentage(10),
         Constraint::Percentage(10),
-        Constraint::Percentage(20),
-        Constraint::Percentage(20),
     ]);
 
     (list, topic_detail)
 }
 
-fn read_db() -> Result<Vec<Topic>, Error> {
-    let db_content = fs::read_to_string(DB_PATH)?;
-    let parsed: Vec<Topic> = serde_json::from_str(&db_content)?;
-    Ok(parsed)
-}
+fn get_topics(app: &App) -> Result<Vec<Topic>, Box<dyn Error>> {
+    //get list of topics
+    let res: Vec<(String, String)> = app.get_topics();
 
-fn refresh_topic_info() -> Result<(), Error> {
-    // let mut rng = rand::thread_rng();
-    // let db_content = fs::read_to_string(DB_PATH)?;
-    // let mut parsed: Vec<Topic> = serde_json::from_str(&db_content)?;
-    // let catsdogs = match rng.gen_range(0, 1) {
-    //     0 => "cats",
-    //     _ => "dogs",
-    // };
-
-    // let random_pet = Pet {
-    //     id: rng.gen_range(0, 9999999),
-    //     name: rng.sample_iter(Alphanumeric).take(10).collect(),
-    //     category: catsdogs.to_owned(),
-    //     age: rng.gen_range(1, 15),
-    //     created_at: Utc::now(),
-    // };
-
-    // parsed.push(random_pet);
-    // fs::write(DB_PATH, &serde_json::to_vec(&parsed)?)?;
-    //Ok(parsed)
-
-
-
-    // call render topics method
-
-    Ok(())
-
-}
-
-
-fn subscribe_topic(topic_list_state: &mut ListState) -> Result<(), Error> {
-    if let Some(selected) = topic_list_state.selected() {
-        // call subscribe function
-
-        // if subscribe successful -> add ("// Topic Subscribed") in Details window
+    //for each topic on the list -> get info
+    let mut topics_list = Vec::new();
+    for (topic,tll) in res
+    {
+        let json = app.get_json(topic);
+        let t: Topic = serde_json::from_str(&json.to_string())?;
+        topics_list.push(t);
     }
-    Ok(())
+    
+    // return topics list
+    Ok(topics_list)
+} 
+
+fn bid_topic(topic_list_state: &mut ListState, value: &Vec<String>, app: &App) -> Result<bool, Box<dyn Error>> {
+    let mut result = false;
+    
+    if let Some(selected) = topic_list_state.selected() {
+
+        match value[0].parse::<i32>() {
+            Ok(n) => {
+                // format input
+                let msg = format!("bid {}", value[0]);
+
+                // based on selected topic -> get topic name
+                let topic_list = get_topics(&app).expect("can fetch topic list");
+                let selected_topic = topic_list
+                    .get(
+                        topic_list_state
+                            .selected()
+                            .expect("there is always a selected topic"),
+                    )
+                    .expect("exists")
+                    .clone();
+                
+                // add new bid to topic
+                result = app.add_msg(selected_topic.name, msg);
+            },
+            Err(e) => {
+                result = false;
+            },
+        }
+
+        
+    }
+    Ok(result)
 }
 
-fn bid_topic(topic_list_state: &mut ListState) -> Result<(), Error> {
-    if let Some(selected) = topic_list_state.selected() {
-        // let db_content = fs::read_to_string(DB_PATH)?;
-        // let mut parsed: Vec<Pet> = serde_json::from_str(&db_content)?;
-        // parsed.remove(selected);
-        // fs::write(DB_PATH, &serde_json::to_vec(&parsed)?)?;
-        // pet_list_state.select(Some(selected - 1));
+fn publish_topic(value: &Vec<String>, app: &App) -> Result<bool, Box<dyn Error>> {
+    let mut result = false;
+    
+    // split input (ex: topic_name:bid)
+    let msg_split: Vec<&str> = value[0].split(":").collect();
 
+    if msg_split.len() >= 2 {
+        match msg_split[1].parse::<i32>() {
+            Ok(n) => {
+                let topic_name = msg_split[0];
+                let topic_bid = msg_split[1];
 
-        // pop new window or allow input somewhere to place bid
-        let bid = Block::default()
-            .borders(Borders::ALL)
-            .style(Style::default().fg(Color::White))
-            .title("Bid")
-            .border_type(BorderType::Plain);
+                // publish topic
+                let status = app.publish(topic_name.to_string());
 
-        // call functions to add new bid/message in App
-
-        // if successful refresh Topics list 
-
+                if status {
+                    // add new bid to topic
+                    let msg = format!("bid {}", topic_bid);
+                    result = app.add_msg(topic_name.to_string(), msg);
+                } 
+            },
+            Err(e) => {
+                result = false;
+            },
+        }
     }
-    Ok(())
+    Ok(result)
+}
+
+fn subscribe_topic(topic_list_state: &mut ListState, app: &App) -> Result<bool, Box<dyn Error>> {
+    let mut result = false;
+    
+    if let Some(selected) = topic_list_state.selected() {
+
+        // based on selected topic -> get topic name
+        let topic_list = get_topics(&app).expect("can fetch topic list");
+        let selected_topic = topic_list
+            .get(
+                topic_list_state
+                    .selected()
+                    .expect("there is always a selected topic"),
+            )
+            .expect("exists")
+            .clone();
+        
+        if(!selected_topic.subscribed) {
+            // subscribe topic
+            result = app.subscribe(selected_topic.name);
+        }
+    }
+    Ok(result)
 }
