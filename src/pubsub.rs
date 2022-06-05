@@ -22,8 +22,12 @@ pub struct PubSubInstance {
      - Improve print function(s).
 */
 
-// TODO:
-// TODO: Parse msgs as (BID X ; LEAVE)
+/*
+    PubSubInstance: 
+    Represented as the following string in kademlia DHT:
+        <id> : <publisher_addr> : <msgstack> : <substack> : <TTL>
+    Used to save state of our bidding sessions.
+*/
 impl PubSubInstance {
     pub fn new(id: Option<String>, publisher: String, msgstack: Option<Vec<String>>, substack: Option<Vec<String>>) -> Self {
         if msgstack != None && substack != None {

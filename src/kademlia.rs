@@ -93,6 +93,9 @@ impl RoutingTable {
      *          }
      *      }
      *      8 * KEY_LEN - 1
+     * 
+     * (N_KBUCKETS - 1) - (8 * i) , offset 8 in 8 buckets (there are N_KBUCKETS --> multipl of 8)
+     * (    || + shift), offset other buckets (8 bytes thus 8 possible shifts)
     */
     fn get_bucket_index(&self, key: &Key) -> usize {
         let d = Distance::new(&self.node.id, key);
@@ -233,7 +236,7 @@ impl KademliaInstance {
 
         kad.clone().requests_handler(rpc_receiver);
         
-        // TODO: verify if needed
+        // Populate routing table with our instance
         kad.find_node(&node.id);
 
         // republish every <key,value> every timeout

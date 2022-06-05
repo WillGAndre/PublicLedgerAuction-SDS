@@ -408,6 +408,14 @@ impl App {
     }
 
     // register method - arg: AppNode, Note: Added node timeout
+    /*
+        Based on the AppNode join_network function but with small
+        nuance. After joining the network previous work saved in BK
+        is analyzed in order to propogate information back to the CLI.
+        Notice that this procedure is based on the slides provided by 
+        the teacher in the practical class (KademliaBriefOverview.pdf),
+        blockchain is queried then new block is added.
+    */
     fn join_network(&self, bootnode: Node) -> bool {
         let find_node = full_rpc_proc(&self.appnode.kademlia.rpc, KademliaRequest::NodeJoin(self.appnode.node.clone()), bootnode.clone());
         
