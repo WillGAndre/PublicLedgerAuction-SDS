@@ -260,7 +260,7 @@ mod tests {
 
         println!();
 
-        let register = appnode.join_network(boot.nodes[0].clone());
+        let register = appnode.join_network(boot.nodes[0].node.clone());
         println!("Register: {}", register);
 
         let appnodechain = appnode.kademlia.blockchain.lock()
@@ -320,7 +320,7 @@ mod tests {
 
         println!();
 
-        let register = appnode.join_network(boot.nodes[0].clone());
+        let register = appnode.join_network(boot.nodes[0].node.clone());
         println!("AppNode register: {}", register);
 
         println!();
@@ -388,7 +388,7 @@ mod tests {
 
         println!();
 
-        let register = appnode.join_network(boot.nodes[0].clone());
+        let register = appnode.join_network(boot.nodes[0].node.clone());
         println!("AppNode register: {}", register);
         let get_appnode = appnode.kademlia.get(String::from("test")).unwrap();
         println!("AppNode GET: {:?}", decode_data(get_appnode));
@@ -431,13 +431,13 @@ mod tests {
         let appnode1 = AppNode::new(aux::get_ip().unwrap(), 1336, None);
         let appnode2 = AppNode::new(aux::get_ip().unwrap(), 1337, None);
 
-        let _register0 = appnode0.join_network(boot.nodes[0].clone());
+        let _register0 = appnode0.join_network(boot.nodes[0].node.clone());
         //println!("AppNode register: {}", register0);
 
-        let _register1 = appnode1.join_network(boot.nodes[1].clone()); // boot.nodes[1].clone()
+        let _register1 = appnode1.join_network(boot.nodes[1].node.clone()); // boot.nodes[1].clone()
         //println!("AppNode register: {}", register1);
 
-        let _register2 = appnode2.join_network(boot.nodes[2].clone()); // boot.nodes[2].clone()
+        let _register2 = appnode2.join_network(boot.nodes[2].node.clone()); // boot.nodes[2].clone()
         //println!("AppNode register: {}", register2);
 
         println!("AppNode1 publish: test + subscribe from AppNode0 and AppNode2");
@@ -513,9 +513,9 @@ mod tests {
         let appnode2 = AppNode::new(aux::get_ip().unwrap(), 1337, None);
 
 
-        let _register0 = appnode0.join_network(boot.nodes[0].clone());
-        let _register1 = appnode1.join_network(boot.nodes[1].clone());
-        let _register2 = appnode2.join_network(boot.nodes[2].clone());
+        let _register0 = appnode0.join_network(boot.nodes[0].node.clone());
+        let _register1 = appnode1.join_network(boot.nodes[1].node.clone());
+        let _register2 = appnode2.join_network(boot.nodes[2].node.clone());
 
         println!();
         println!("AppNode0 BK:");
@@ -554,10 +554,10 @@ mod tests {
             let bootnode = boot.nodes[i].clone();
             threads.push(spawn(move || {
                 let mut res = String::new();
-                let mut reg = appnode.join_network(bootnode.clone());
+                let mut reg = appnode.join_network(bootnode.node.clone());
                 if !reg {
                     sleep(Duration::from_secs(NODETIMEOUT));
-                    reg = appnode.join_network(bootnode);
+                    reg = appnode.join_network(bootnode.node);
                 }
                 res.push_str(&format!("REGISTER APPNODE{}: {}", i, reg));
                 return res
@@ -583,13 +583,13 @@ mod tests {
         Bootstrap::full_bk_sync(boot.clone());
         println!();
 
-        let appnode0 = App::new(aux::get_ip().unwrap(), 1342, boot.nodes[0].clone());
-        let appnode1 = App::new(aux::get_ip().unwrap(), 1343, boot.nodes[1].clone());
-        let appnode2 = App::new(aux::get_ip().unwrap(), 1344, boot.nodes[2].clone());
+        let appnode0 = App::new(aux::get_ip().unwrap(), 1342, boot.nodes[0].node.clone());
+        let appnode1 = App::new(aux::get_ip().unwrap(), 1343, boot.nodes[1].node.clone());
+        let appnode2 = App::new(aux::get_ip().unwrap(), 1344, boot.nodes[2].node.clone());
 
         appnode0.publish(String::from("test"));
 
-        //sleep(Duration::from_secs(NODETIMEOUT * 2));
+        sleep(Duration::from_secs(NODETIMEOUT * 2));
 
         let sub1 = appnode1.subscribe(String::from("test"));
         let sub2 = appnode2.subscribe(String::from("test"));
@@ -656,6 +656,73 @@ mod tests {
         println!("AppNode2 topics found: {:?}", appnode2.topics);
     }
 
+    #[test]
+    fn pub_teardown_test() {
+        let boot = Bootstrap::new();
+        Bootstrap::full_bk_sync(boot.clone());
+        println!();
+
+        let appnode0 = App::new(aux::get_ip().unwrap(), 1342, boot.nodes[0].node.clone());
+        let appnode1 = App::new(aux::get_ip().unwrap(), 1343, boot.nodes[1].node.clone());
+
+        appnode0.publish(String::from("test"));
+
+        sleep(Duration::from_secs(5));
+
+        let mut sub1 = appnode1.subscribe(String::from("test"));
+        if !sub1 {
+            sub1 = appnode1.subscribe(String::from("test"));
+        }
+        let mut add1 = appnode1.add_msg(String::from("test"), String::from("bid 100"));
+        if !add1 {
+            add1 = appnode1.add_msg(String::from("test"), String::from("bid 100"));
+        }
+        println!("Sub1: {}, Add1: {}", sub1, add1);
+
+        sleep(Duration::from_secs(62));
+
+        println!();
+        println!();
+        // prints ---
+        let get_bootnode0 = boot.nodes[0].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode0 GET: {:?}", decode_data(get_bootnode0));
+        let get_bootnode1 = boot.nodes[1].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode1 GET: {:?}", decode_data(get_bootnode1));
+        let get_bootnode2 = boot.nodes[2].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode2 GET: {:?}", decode_data(get_bootnode2));
+        let get_bootnode3 = boot.nodes[3].kademlia.get(String::from("test")).unwrap();
+        println!("BootNode3 GET: {:?}", decode_data(get_bootnode3));
+
+        println!();
+        println!("AppNode0 BK:");
+        appnode0.appnode.kademlia.print_blockchain();
+        println!("AppNode1 BK:");
+        appnode1.appnode.kademlia.print_blockchain();
+        println!();
+        // println!("AppNode0 HMP:");
+        // println!("{}", appnode0.appnode.kademlia.print_hashmap());
+        // println!("AppNode1 HMP:");
+        // println!("{}", appnode1.appnode.kademlia.print_hashmap());
+        // println!("AppNode2 HMP:");
+        // println!("{}", appnode2.appnode.kademlia.print_hashmap());
+        // println!();
+        println!(" --- ");
+        println!("BootNode0 BK:");
+        boot.nodes[0].kademlia.print_blockchain();
+        println!(" --- ");
+        println!("BootNode1 BK:");
+        boot.nodes[1].kademlia.print_blockchain();
+        println!(" --- ");
+        println!("BootNode2 BK:");
+        boot.nodes[2].kademlia.print_blockchain();
+        println!(" --- ");
+        println!("BootNode3 BK:");
+        boot.nodes[3].kademlia.print_blockchain();
+        println!();
+        println!();
+        println!("AppNode0 topics found: {:?}", appnode0.topics);
+        println!("AppNode1 topics found: {:?}", appnode1.topics);
+    }    
 
     fn decode_data(data: String) -> String {
         String::from_utf8(decode(data.to_string()).expect("Error decoding data"))

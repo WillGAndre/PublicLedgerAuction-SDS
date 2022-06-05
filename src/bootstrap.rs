@@ -369,41 +369,8 @@ impl Data {
 pub struct App {
     pub appnode: AppNode,
     pub bootappnode: Node,
-    pub topics: Arc<Mutex<Vec<(String, String)>>>,
+    pub topics: Arc<Mutex<Vec<(String, String, String)>>>,
 }
-
-/*
-    BK MSG:
-        NETWORK:
-        - REGISTER
-
-        PUBSUB:
-        - NEW TOPIC
-        - DELETE TOPIC
-        - FINISH TOPIC
-            \
-             \
-              -> TRANSACTIONS: <IP:PORT> -> <IP:PORT> ; $$$
-*/
-
-/*
-    APP MSG:
-        - SUBSCRIBE TOPIC
-            {msg: BID <TOPIC> X, sender:}
-            {msg: LEAVE <TOPIC>, sender:}
-        
-        - PUBLISH TOPIC
-            PUBLISH:
-            "
-                > topic session has started
-                > starting bid at: 100$$
-
-                (new bid > bid (100))
-                > NEW BID: X$$
-            "
-            BID <TOPIC> X -> pubsub struct ( split(str, ' ') -> [1] -> regex([0-9]+) )
-            LEAVE <TOPIC>
-*/
 
 /*
     TODO:
@@ -434,6 +401,7 @@ impl App {
         };
 
         App::pull_bk(app.clone());
+        App::teardow_pubsub(app.clone());
 
         app
     }
@@ -462,13 +430,27 @@ impl App {
                                 if diff > 0 {
                                     let mut topics = app.topics.lock()
                                         .expect("Error setting lock in topics vec!");
-                                    let topic_split: Vec<&str> = data.msg.split(' ').collect();
-                                    let topic_entry = (topic_split[1].to_string(), ttl_str);
+                                    let msg_split: Vec<&str> = data.msg.split('|').collect();
+                                    let topic_split: Vec<&str> = msg_split[0].split(' ').collect();
+                                    let publisher_split: Vec<&str> = msg_split[1].split(' ').collect();
+                                    let topic_entry = (topic_split[1].to_string(), ttl_str, publisher_split[1].to_string());
                                     if !topics.contains(&topic_entry) {
                                         topics.push(topic_entry);
                                     }
                                     drop(topics);
                                 }
+                                // App::teardow_pubsub(app.clone(), 1 * 60);
+                            },
+                            2 => {
+                                let mut topics = app.topics.lock()
+                                    .expect("Error setting lock in topics");
+                                let data_split: Vec<&str> = data.msg.split('|').collect();
+                                let topic: Vec<&str> = data_split[0].split(' ').collect();
+                                let index = topics.iter().position(|(x, _, _)| *x == topic[1]);
+                                if index != None {
+                                    topics.remove(index.unwrap());
+                                }
+                                // bid -> data_split[1] | bidder -> data_split[2]
                             },
                             _ => {},
                         };
@@ -479,14 +461,56 @@ impl App {
         });
     }
 
+    fn teardow_pubsub(app: App) {
+        spawn(move || {
+            loop {
+                let topics = app.topics.lock()
+                    .expect("Error setting lock in topics");
+                let topics_state = topics.clone();
+                drop(topics);
+                if topics_state.len() == 0 {
+                    sleep(Duration::from_secs(NODETIMEOUT * 30));
+                } else {
+                    let mut topic_to_delete: String = String::from("");
+                    for (topic, ttl_str, publisher_addr) in topics_state.clone() {
+                        let ttl: DateTime<Local> = ttl_str.parse().unwrap();
+                        let diff: i64 = (ttl - Local::now()).num_seconds();
+                        if diff <= 0 && publisher_addr == app.appnode.node.get_addr() {
+                            topic_to_delete = topic.clone();
+                            let json = app.get_json(topic.clone());
+                            app.pull_bk_add_block(
+                                Data::new(
+                                    format!("END_TOPIC: {}|BID: {}|BIDDER: {}", topic, json["highest_bid"], json["highest_biddder"]), 
+                                    2, 
+                                    None
+                                )
+                            );
+                            break
+                        }
+                        if topic_to_delete != "" {
+                            break
+                        }
+                    }
+                    if topic_to_delete != "" {
+                        let mut topics = app.topics.lock()
+                            .expect("Error setting lock in topics");
+                        let index = topics.iter().position(|(x, _, _)| *x == topic_to_delete).unwrap();
+                        topics.remove(index);
+                    }
+                }
+            }
+        });
+    }
+
     // TODO: 
     //  - Retry mech 
     //  - publish teardown (add block END_PUB ..)
     pub fn publish(&self, topic: String) -> bool {
-        let ttl = Local::now() + chrono::Duration::minutes(15);
+        let timeout_mins: i64 = 15;
+        let ttl = Local::now() + chrono::Duration::minutes(timeout_mins);
         let ttl_str = format!("{}", ttl);
         let data = Data::new(
-            format!("PUB_TOPIC: {}", topic), 
+            format!("PUB_TOPIC: {}|PUBLISHER: {}", topic, self.appnode.node.get_addr()), 
             1,
             Some(format!("{}", ttl)),
         );
@@ -494,22 +518,16 @@ impl App {
             // TODO: error handeling
             self.appnode.publish(topic.clone(), ttl);
 
-            let topic_entry = (topic, ttl_str);
+            let topic_entry = (topic, ttl_str, self.appnode.node.get_addr());
             let mut topics = self.topics.lock()
                 .expect("Error setting lock in topics vec!");
             if !topics.contains(&topic_entry) {
                 topics.push(topic_entry);
             }
             drop(topics);
-
-
             sleep(Duration::from_secs(NODETIMEOUT));
             return true
         }
-
-        // Call pubsub teardown loop:
-        //  if addr == publisher addr and on pubsub exp_time hit: Send BK Block (end topic + transactions) 
-
         false
     }
 
@@ -518,7 +536,7 @@ impl App {
     pub fn subscribe(&self, topic: String) -> bool {
         let topics = self.topics.lock()
             .expect("Error setting lock in topics vec!");
-        let topics_vec: Vec<(String,String)> = topics.clone().into_iter().collect();
+        let topics_vec: Vec<(String,String,String)> = topics.clone().into_iter().collect();
         drop(topics);
 
         let mut sub = false;
@@ -550,7 +568,7 @@ impl App {
         status
     }
 
-    pub fn get_topics(&self) -> Vec<(String, String)> {
+    pub fn get_topics(&self) -> Vec<(String, String, String)> {
         let topics = self.topics.lock()
             .expect("Error setting lock in topics");
         let res = topics.clone();

@@ -518,11 +518,11 @@ fn render_topics<'a>(topic_list_state: &ListState, app: &App) -> (List<'a>, Tabl
 
 fn get_topics(app: &App) -> Result<Vec<Topic>, Box<dyn Error>> {
     //get list of topics
-    let res: Vec<(String, String)> = app.get_topics();
+    let res: Vec<(String, String, String)> = app.get_topics();
 
     //for each topic on the list -> get info
     let mut topics_list = Vec::new();
-    for (topic,tll) in res
+    for (topic,tll,_) in res
     {
         let json = app.get_json(topic);
         let t: Topic = serde_json::from_str(&json.to_string())?;
