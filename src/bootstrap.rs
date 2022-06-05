@@ -386,24 +386,127 @@ impl App {
         //let bootnode = bootappnode.node.clone();
         let node = bootappnode.clone();
         let appnode = AppNode::new(addr, port, Some(node));
-        let mut register = appnode.join_network(bootappnode.clone());
+
+        let app = Self {
+            appnode: appnode,
+            bootappnode: bootappnode.clone(),
+            topics: Arc::new(Mutex::new(Vec::new())),
+        };
+
+        let mut register = app.join_network(bootappnode.clone());
         let mut iter = 2;
         while !register {
             if iter == 5 { break; }
-            register = appnode.join_network(bootappnode.clone());
+            register = app.join_network(bootappnode.clone());
             iter += 1;
         }
-        
-        let app = Self {
-            appnode: appnode,
-            bootappnode: bootappnode,
-            topics: Arc::new(Mutex::new(Vec::new())),
-        };
 
         App::pull_bk(app.clone());
         App::teardow_pubsub(app.clone());
 
         app
+    }
+
+    // register method - arg: AppNode, Note: Added node timeout
+    fn join_network(&self, bootnode: Node) -> bool {
+        let find_node = full_rpc_proc(&self.appnode.kademlia.rpc, KademliaRequest::NodeJoin(self.appnode.node.clone()), bootnode.clone());
+        
+        if let Some(KademliaResponse::NodeJoin(nodes)) = find_node {
+            if !nodes.is_empty() {
+                for node in nodes {
+                    if node.id != self.appnode.node.id {
+                        full_rpc_proc(&self.appnode.kademlia.rpc, KademliaRequest::NodeJoin(self.appnode.node.clone()), node.clone());
+                        let mut routingtable = self.appnode.kademlia.routingtable.lock()
+                            .expect("Error setting lock in routing table");
+                        routingtable.update_routing_table(node);
+                        drop(routingtable)
+                    }
+                }
+                
+                let query_blockchain = full_rpc_proc(&self.appnode.kademlia.rpc, KademliaRequest::QueryLocalBlockChain, bootnode.clone());
+                if let Some(KademliaResponse::QueryLocalBlockChain(blocks)) = query_blockchain {
+                    let mut blockchain = self.appnode.kademlia.blockchain.lock()
+                        .expect("Error setting lock in local blockchain");
+                    let new_blocks = blockchain.get_diff_from_chains(blockchain.blocks.clone(), blocks.clone());
+                    blockchain.blocks = blockchain.choose_chain(blockchain.blocks.clone(), blocks);
+
+                    let id = blockchain.blocks[blockchain.blocks.len() - 1].id + 1;
+                    let prev_hash = blockchain.blocks[blockchain.blocks.len() - 1].hash.to_string();
+                    let data = Data::new(
+                        format!("REGISTER: {id}", id=self.appnode.node.get_addr()), 
+                        0,
+                        None
+                    );
+                    let block = Block::new(id, prev_hash, data.to_json());
+
+                    blockchain.add_block(block.clone());
+                    drop(blockchain);
+
+                    let add_block = full_rpc_proc(&self.appnode.kademlia.rpc, KademliaRequest::AddBlock(block), bootnode.clone());
+                    if let Some(KademliaResponse::Ping) = add_block {
+                        println!("\t[AN{}]: Added Block info ({})", self.appnode.node.port, data.to_json());
+
+                        for new_block in new_blocks.clone() {
+                            if new_block.id != 0 {
+                                let data: Data = serde_json::from_str(&new_block.data).
+                                    expect("Error converting data to json");
+                                match data.msg_type {
+                                    0 => {},
+                                    1 => {
+                                        let ttl: DateTime<Local> = data.exp_time.unwrap().parse().unwrap();
+                                        let ttl_str = format!("{}", ttl);
+                                        let time = Local::now();
+                                        let diff = (ttl - time).num_minutes();
+                                        if diff > 0 {
+                                            let mut topics = self.topics.lock()
+                                                .expect("Error setting lock in topics vec!");
+                                            let msg_split: Vec<&str> = data.msg.split('|').collect();
+                                            let topic_split: Vec<&str> = msg_split[0].split(' ').collect();
+                                            let publisher_split: Vec<&str> = msg_split[1].split(' ').collect();
+                                            let topic_entry = (topic_split[1].to_string(), ttl_str, publisher_split[1].to_string());
+                                            if !topics.contains(&topic_entry) {
+                                                topics.push(topic_entry);
+                                            }
+                                            drop(topics);
+                                        }
+                                        // App::teardow_pubsub(app.clone(), 1 * 60);
+                                    },
+                                    2 => {
+                                        let mut topics = self.topics.lock()
+                                            .expect("Error setting lock in topics");
+                                        let data_split: Vec<&str> = data.msg.split('|').collect();
+                                        let topic: Vec<&str> = data_split[0].split(' ').collect();
+                                        let index = topics.iter().position(|(x, _, _)| *x == topic[1]);
+                                        if index != None {
+                                            topics.remove(index.unwrap());
+                                        }
+                                        drop(topics);
+                                        // bid -> data_split[1] | bidder -> data_split[2]
+                                    },
+                                    _ => {},
+                                };
+                            }
+                        }
+
+                        sleep(Duration::from_secs(NODETIMEOUT));
+                        return true
+                    } else if let Some(KademliaResponse::PingUnableProcReq) = add_block {
+                        let mut blockchain = self.appnode.kademlia.blockchain.lock()
+                            .expect("Error setting lock in local blockchain");
+                        blockchain.remove_last_block();
+                        drop(blockchain);
+                        println!("\t[AN{}]: Unable to add block info ({})", self.appnode.node.port, data.to_json());
+                        return false
+                    }
+                }
+            } else {
+                println!("\t[AN{}]: Error joining network - No nearby nodes found", self.appnode.node.port)
+            }
+        } else {
+            // TODO
+            println!("\t[AN{}]: Error joining network", self.appnode.node.port)
+        }
+        false   
     }
 
     fn pull_bk(app: App) {

@@ -6,7 +6,7 @@ use crossterm::{
         LeaveAlternateScreen,},
 };
 
-use rand::{distributions::Alphanumeric, prelude::*};
+use rand::{Rng, distributions::Alphanumeric, prelude::*};
 use serde::{Deserialize, Serialize};
 //use serde_json::json;
 use std::fs;
@@ -28,6 +28,7 @@ use tui::{
 };
 use tui_input::backend::crossterm as input_backend;
 use tui_input::Input;
+use std::env;
 
 
 #[path = "../../src/aux.rs"]
@@ -48,6 +49,7 @@ mod pubsub;
 mod rpc;
 use crate::lib::{NODETIMEOUT, K_PARAM, N_KBUCKETS, KEY_LEN, ALPHA, TREPLICATE};
 use crate::bootstrap::{App, Bootstrap};
+use crate::node::{Node};
 
 #[derive(Serialize, Deserialize, Clone)]
 struct Topic {
@@ -104,22 +106,16 @@ impl Default for AppCli {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {//Box<dynapp.input_mode = InputMode::Topics; Error>> {
+    let cmd_args: Vec<String> = env::args().collect();
+    let port: u16 = cmd_args[1].parse::<u16>().unwrap();
+    let mut rng = rand::thread_rng();
+    let rand_n = rng.gen_range(0, 4);
+    let boot_port: u16 = format!("133{}", rand_n).parse::<u16>().unwrap();
+    let boot_node: Node = Node::new(aux::get_ip().unwrap(), boot_port);
     // setup terminal
     enable_raw_mode()?;
 
-    // app
-    let boot = Bootstrap::new();
-    Bootstrap::full_bk_sync(boot.clone());
-
-    let app = App::new(aux::get_ip().unwrap(), 1342, boot.nodes[0].node.clone());
-    app.publish(String::from("test"));
-
-    // OTHER MACHINE
-    // let node = Node::new(String::from("192.168.1.122"), 1333);
-
-    // let app = App::new(aux::get_ip().unwrap(), 1343, node.clone());
-    // app.publish(String::from("test2"));
-
+    let app = App::new(aux::get_ip().unwrap(), port, boot_node);
 
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;

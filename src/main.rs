@@ -1,7 +1,8 @@
 extern crate kad;
-use kad::node::Node;
-use kad::aux;
+use kad::bootstrap::Bootstrap;
 
 fn main() {
-    println!("main");
+    let boot = Bootstrap::new();
+    Bootstrap::full_bk_sync(boot.clone());
+    loop {}
 }
