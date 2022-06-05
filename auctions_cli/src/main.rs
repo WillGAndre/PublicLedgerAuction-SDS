@@ -110,12 +110,15 @@ fn main() -> Result<(), Box<dyn Error>> {//Box<dynapp.input_mode = InputMode::To
     let port: u16 = cmd_args[1].parse::<u16>().unwrap();
     let mut rng = rand::thread_rng();
     let rand_n = rng.gen_range(0, 4);
-    let boot_port: u16 = format!("133{}", rand_n).parse::<u16>().unwrap();
+    let boot_port: u16 = format!("133{}", rand_n.clone()).parse::<u16>().unwrap();
     let boot_node: Node = Node::new(aux::get_ip().unwrap(), boot_port);
     // setup terminal
     enable_raw_mode()?;
 
     let app = App::new(aux::get_ip().unwrap(), port, boot_node);
+    let test_id = format!("test-{}", rand_n);
+    app.publish(test_id);
+
 
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
