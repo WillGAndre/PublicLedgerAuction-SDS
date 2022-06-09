@@ -28,6 +28,7 @@ pub const TREPLICATE: u64 = 3600;
 // Timeout in secs
 pub const NODETIMEOUT: u64 = 1;
 
+// cargo test -- --nocapture --test pub_teardown_test
 #[cfg(test)]
 mod tests {
     use super::node::{Node, NodeWithDistance, Distance, Key};
@@ -667,8 +668,6 @@ mod tests {
 
         appnode0.publish(String::from("test"));
 
-        sleep(Duration::from_secs(5));
-
         let mut sub1 = appnode1.subscribe(String::from("test"));
         if !sub1 {
             sub1 = appnode1.subscribe(String::from("test"));
@@ -677,7 +676,6 @@ mod tests {
         if !add1 {
             add1 = appnode1.add_msg(String::from("test"), String::from("bid 100"));
         }
-        println!("Sub1: {}, Add1: {}", sub1, add1);
 
         sleep(Duration::from_secs(62));
 

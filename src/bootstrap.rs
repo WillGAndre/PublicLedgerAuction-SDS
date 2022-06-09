@@ -617,7 +617,7 @@ impl App {
     //  - Retry mech 
     //  - publish teardown (add block END_PUB ..)
     pub fn publish(&self, topic: String) -> bool {
-        let timeout_mins: i64 = 15;
+        let timeout_mins: i64 = 15; // 15
         let ttl = Local::now() + chrono::Duration::minutes(timeout_mins);
         let ttl_str = format!("{}", ttl);
         let data = Data::new(

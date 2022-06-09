@@ -109,7 +109,7 @@ fn main() -> Result<(), Box<dyn Error>> {//Box<dynapp.input_mode = InputMode::To
     let cmd_args: Vec<String> = env::args().collect();
     let port: u16 = cmd_args[1].parse::<u16>().unwrap();
     let mut rng = rand::thread_rng();
-    let rand_n = rng.gen_range(0, 4);
+    let rand_n = rng.gen_range(0..4);
     let boot_port: u16 = format!("133{}", rand_n.clone()).parse::<u16>().unwrap();
     let boot_node: Node = Node::new(aux::get_ip().unwrap(), boot_port);
     // setup terminal

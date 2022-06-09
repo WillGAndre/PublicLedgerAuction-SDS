@@ -12,7 +12,7 @@ crossterm = { version = "0.23.2", features = [ "serde" ] }
 serde = {version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
-rand = { version = "*", default-features = false, features = ["std"] }
+rand = "*"
 tui = { version = "0.18", features = ['crossterm', 'serde'] }
 tui-input = "*"
 thiserror = "1.0"
