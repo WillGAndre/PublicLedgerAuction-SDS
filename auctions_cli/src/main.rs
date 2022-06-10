@@ -116,8 +116,8 @@ fn main() -> Result<(), Box<dyn Error>> {//Box<dynapp.input_mode = InputMode::To
     enable_raw_mode()?;
 
     let app = App::new(aux::get_ip().unwrap(), port, boot_node);
-    let test_id = format!("test-{}", rand_n);
-    app.publish(test_id);
+    //let test_id = format!("test-{}", rand_n);
+    //app.publish(test_id);
 
 
     let mut stdout = io::stdout();
@@ -203,15 +203,35 @@ fn run_app<B: Backend>(
             match active_menu_item {
                 MenuItem::Home => f.render_widget(render_home(), chunks[1]),
                 MenuItem::Topics => {
-                    let topics_chunk = Layout::default()
+                    let topic_list = get_topics(&app).expect("can fetch topic list");
+                    
+                    if topic_list.len() != 0 {
+                        let topics_chunk = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints(
                             [Constraint::Percentage(20), Constraint::Percentage(80)].as_ref(),
                         )
                         .split(chunks[1]);
-                    let (left, right) = render_topics(&topic_list_state, &app);
-                    f.render_stateful_widget(left, topics_chunk[0], &mut topic_list_state);
-                    f.render_widget(right, topics_chunk[1]);
+                        let (left, right) = render_topics(&topic_list_state, &app, topic_list);
+                        f.render_stateful_widget(left, topics_chunk[0], &mut topic_list_state);
+                        f.render_widget(right, topics_chunk[1]);
+                    } else {
+                        let empty = Paragraph::new(vec![
+                            Spans::from(vec![Span::raw("")]),
+                            Spans::from(vec![Span::raw("")]),
+                            Spans::from(vec![Span::raw("")]),
+                            Spans::from(vec![Span::raw("There is no auction running at the moment")]),
+                        ])
+                        .alignment(Alignment::Center)
+                        .block(
+                            Block::default()
+                                .borders(Borders::ALL)
+                                .style(Style::default().fg(Color::White))
+                                .border_type(BorderType::Plain),
+                        );
+
+                        f.render_widget(empty, chunks[1]);
+                    }
                 },
                 //MenuItem::Input => f.render_widget(render_home(), chunks[1]),
             }
@@ -426,7 +446,7 @@ fn render_home<'a>() -> Paragraph<'a> {
     home
 }
 
-fn render_topics<'a>(topic_list_state: &ListState, app: &App) -> (List<'a>, Table<'a>) {
+fn render_topics<'a>(topic_list_state: &ListState, app: &App, topic_list: Vec<Topic>) -> (List<'a>, Table<'a>) {
     let topics = Block::default()
         .borders(Borders::ALL)
         .style(Style::default().fg(Color::White))
@@ -434,23 +454,23 @@ fn render_topics<'a>(topic_list_state: &ListState, app: &App) -> (List<'a>, Tabl
         .border_type(BorderType::Plain);
 
     // get topics list
-    let topic_list = get_topics(&app).expect("can fetch topic list");
+    //let topic_list = get_topics(&app).expect("can fetch topic list");
 
     let items: Vec<_> = topic_list
-        .iter()
-        .map(|topic| {
-            let mut subscribed = "";
-            if topic.subscribed.clone() == true
-            {
-                subscribed = " [Subscribed]";
-            }
+    .iter()
+    .map(|topic| {
+        let mut subscribed = "";
+        if topic.subscribed.clone() == true
+        {
+            subscribed = " [Subscribed]";
+        }
 
-            ListItem::new(Spans::from(vec![Span::styled(
-                topic.name.clone() + subscribed,
-                Style::default(),
-            )]))
-        })
-        .collect();
+        ListItem::new(Spans::from(vec![Span::styled(
+            topic.name.clone() + subscribed,
+            Style::default(),
+        )]))
+    })
+    .collect();
 
     let selected_topic = topic_list
         .get(
