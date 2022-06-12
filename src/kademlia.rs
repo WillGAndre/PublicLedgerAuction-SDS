@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::{HashMap, BinaryHeap, HashSet};
 use std::str;
 use std::time::Duration;
+use log::{info};
 
 /**
  * KBucket Instance:
@@ -371,7 +372,7 @@ impl KademliaInstance {
 
         let mut history = HashSet::new();
         
-        let mut nodes = self.build_heap(id, routingtable);
+        let mut nodes = self.build_heap(id, routingtable); // # nodes >= ALPHA
 
         for entry in &nodes {
             history.insert(entry.clone());
@@ -434,7 +435,7 @@ impl KademliaInstance {
             .expect("Error setting lock in routing table");
         let mut history = HashSet::new();
 
-        let mut nodes = self.build_heap(&key, routingtable);
+        let mut nodes = self.build_heap(&key, routingtable); // # nodes >= ALPHA
 
         for entry in &nodes {
             history.insert(entry.clone());
@@ -445,7 +446,6 @@ impl KademliaInstance {
             let mut qynodes: Vec<NodeWithDistance> = Vec::new();
             let mut results: Vec<Option<QueryValueResult>> = Vec::new();
 
-            // TODO
             // ALPHA parallelism
             for _ in 0..ALPHA {
                 match nodes.pop() {
@@ -560,11 +560,11 @@ impl KademliaInstance {
     pub fn ping(&self, node: Node) -> bool {
         let res = full_rpc_proc(&self.rpc, KademliaRequest::Ping, node.clone());
 
-        let mut routingtable = self.routingtable.lock()
-            .expect("Error setting lock in routing table");
-
         if let Some(KademliaResponse::Ping) = res {
+            let mut routingtable = self.routingtable.lock()
+                .expect("Error setting lock in routing table");
             routingtable.update_routing_table(node);
+            drop(routingtable);
 
             true
         } else {
@@ -579,11 +579,12 @@ impl KademliaInstance {
     pub fn query_node(&self, qynode: Node, id: Key) -> Option<Vec<NodeWithDistance>> {
         let res = full_rpc_proc(&self.rpc, KademliaRequest::QueryNode(id), qynode.clone());
 
-        let mut routingtable = self.routingtable.lock()
-            .expect("Error setting lock in routing table");
-
         if let Some(KademliaResponse::QueryNode(nodeswithdist)) = res {
+            let mut routingtable = self.routingtable.lock()
+                .expect("Error setting lock in routing table");
             routingtable.update_routing_table(qynode);
+            drop(routingtable);
+
             Some(nodeswithdist)
         } else {
             // Remove node from routing table
@@ -600,6 +601,7 @@ impl KademliaInstance {
             let mut routingtable = self.routingtable.lock()
                 .expect("Error setting lock in routing table");
             routingtable.update_routing_table(qynode);
+            drop(routingtable);
             Some(value)
         } else {
             None
@@ -614,6 +616,7 @@ impl KademliaInstance {
             let mut routingtable = self.routingtable.lock()
                 .expect("Error setting lock in routingtable");
             routingtable.update_routing_table(qynode);
+            drop(routingtable);
         } else {
             // TODO: error logs
             println!("ERROR")
@@ -692,6 +695,7 @@ impl KademliaInstance {
                 let hashmap = self.hashmap.lock()
                     .expect("Error setting lock in hashmap");
                 let value = hashmap.get(keystr);
+                // drop(hashmap);
 
                 match value {
                     Some(val) => (
@@ -767,9 +771,21 @@ impl KademliaInstance {
 
     pub fn print_blockchain(&self) {
         let blockchain = self.blockchain.lock()
-            .expect("Error setting lock in local blockchain"); // TODO: drop
+            .expect("Error setting lock in local blockchain");
         let blocks = blockchain.blocks.clone();
         drop(blockchain);
         println!("{:?}", blocks)
     }
+
+    /**
+     * DEBUG
+    **/
+
+    pub fn log_blockchain(&self) {
+        let blockchain = self.blockchain.lock()
+            .expect("Error setting lock in local blockchain");
+        let blocks: Vec<Block> = blockchain.blocks.clone();
+        drop(blockchain);
+        info!("\nBN[{}] New BK block: {:?}", self.node.port, blocks.last())
+    } 
 }

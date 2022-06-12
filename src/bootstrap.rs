@@ -2,7 +2,7 @@ use super::kademlia::{KademliaInstance};
 use super::blockchain::Block;
 use super::pubsub::PubSubInstance;
 use super::node::{Node};
-use super::aux::get_ip;
+use super::aux::{get_ip, LockResultRes};
 use super::rpc::{full_rpc_proc, KademliaRequest, KademliaResponse, QueryValueResult};
 use super::NODETIMEOUT;
 
@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use base64::decode;
+use log::{info, warn};
 
 #[derive(Clone)]
 pub struct Bootstrap {
@@ -34,7 +35,9 @@ impl Bootstrap {
             bk_hash: Vec::new()
         };
 
+        info!("Synchronizing Bootstrap...");
         boot = boot.init_sync();
+        info!("Bootstrap ready");
 
         boot
     }
@@ -103,11 +106,13 @@ impl Bootstrap {
                         if global_hash == None {
                             global_hash = Some(blockchain_hash)
                         } else if global_hash != Some(blockchain_hash) {
-                            println!("\t[BOOT]: FULL SYNC - Error synchronizing blockchain");
+                            warn!("\t[BOOT]: FULL SYNC - Error synchronizing blockchain");
                             break; // sync next timeout
                         }
                     }
                     boot.bk_hash = global_hash.unwrap();
+                    // Debug
+                    boot.nodes[0].kademlia.log_blockchain();
                 }
             }
         });
@@ -424,8 +429,7 @@ impl App {
                 for node in nodes {
                     if node.id != self.appnode.node.id {
                         full_rpc_proc(&self.appnode.kademlia.rpc, KademliaRequest::NodeJoin(self.appnode.node.clone()), node.clone());
-                        let mut routingtable = self.appnode.kademlia.routingtable.lock()
-                            .expect("Error setting lock in routing table");
+                        let mut routingtable = self.appnode.kademlia.routingtable.lock().get_guard();
                         routingtable.update_routing_table(node);
                         drop(routingtable)
                     }
@@ -433,8 +437,7 @@ impl App {
                 
                 let query_blockchain = full_rpc_proc(&self.appnode.kademlia.rpc, KademliaRequest::QueryLocalBlockChain, bootnode.clone());
                 if let Some(KademliaResponse::QueryLocalBlockChain(blocks)) = query_blockchain {
-                    let mut blockchain = self.appnode.kademlia.blockchain.lock()
-                        .expect("Error setting lock in local blockchain");
+                    let mut blockchain = self.appnode.kademlia.blockchain.lock().get_guard();
                     let new_blocks = blockchain.get_diff_from_chains(blockchain.blocks.clone(), blocks.clone());
                     blockchain.blocks = blockchain.choose_chain(blockchain.blocks.clone(), blocks);
 
@@ -466,8 +469,7 @@ impl App {
                                         let time = Local::now();
                                         let diff = (ttl - time).num_minutes();
                                         if diff > 0 {
-                                            let mut topics = self.topics.lock()
-                                                .expect("Error setting lock in topics vec!");
+                                            let mut topics = self.topics.lock().get_guard();
                                             let msg_split: Vec<&str> = data.msg.split('|').collect();
                                             let topic_split: Vec<&str> = msg_split[0].split(' ').collect();
                                             let publisher_split: Vec<&str> = msg_split[1].split(' ').collect();
@@ -480,8 +482,7 @@ impl App {
                                         // App::teardow_pubsub(app.clone(), 1 * 60);
                                     },
                                     2 => {
-                                        let mut topics = self.topics.lock()
-                                            .expect("Error setting lock in topics");
+                                        let mut topics = self.topics.lock().get_guard();
                                         let data_split: Vec<&str> = data.msg.split('|').collect();
                                         let topic: Vec<&str> = data_split[0].split(' ').collect();
                                         let index = topics.iter().position(|(x, _, _)| *x == topic[1]);
@@ -499,8 +500,7 @@ impl App {
                         sleep(Duration::from_secs(NODETIMEOUT));
                         return true
                     } else if let Some(KademliaResponse::PingUnableProcReq) = add_block {
-                        let mut blockchain = self.appnode.kademlia.blockchain.lock()
-                            .expect("Error setting lock in local blockchain");
+                        let mut blockchain = self.appnode.kademlia.blockchain.lock().get_guard();
                         blockchain.remove_last_block();
                         drop(blockchain);
                         println!("\t[AN{}]: Unable to add block info ({})", self.appnode.node.port, data.to_json());
@@ -517,14 +517,19 @@ impl App {
         false   
     }
 
+    // TODO FOR THREADS:
+    //  if lock poisned (on Err(_)) create new thread and kill current
+
     fn pull_bk(app: App) {
         spawn(move || {
             loop {
-                sleep(Duration::from_secs(NODETIMEOUT));
+                sleep(Duration::from_secs(NODETIMEOUT * 2));
                 let query_blockchain = full_rpc_proc(&app.appnode.kademlia.rpc, KademliaRequest::QueryLocalBlockChain, app.bootappnode.clone());
                 if let Some(KademliaResponse::QueryLocalBlockChain(blocks)) = query_blockchain {
-                    let mut blockchain = app.appnode.kademlia.blockchain.lock()
-                        .expect("Error setting lock in local blockchain");
+                    let mut blockchain = match app.appnode.kademlia.blockchain.lock() {
+                        Ok(blockchain) => blockchain,
+                        Err(_) => continue
+                    };
                     let new_blocks = blockchain.get_diff_from_chains(blockchain.blocks.clone(), blocks.clone());
                     blockchain.blocks = blockchain.choose_chain(blockchain.blocks.clone(), blocks);
                     
@@ -537,10 +542,12 @@ impl App {
                                 let ttl: DateTime<Local> = data.exp_time.unwrap().parse().unwrap();
                                 let ttl_str = format!("{}", ttl);
                                 let time = Local::now();
-                                let diff = (ttl - time).num_minutes();
+                                let diff = (ttl - time).num_seconds();
                                 if diff > 0 {
-                                    let mut topics = app.topics.lock()
-                                        .expect("Error setting lock in topics vec!");
+                                    let mut topics = match app.topics.lock() {
+                                        Ok(topics) => topics,
+                                        Err(_) => continue
+                                    };
                                     let msg_split: Vec<&str> = data.msg.split('|').collect();
                                     let topic_split: Vec<&str> = msg_split[0].split(' ').collect();
                                     let publisher_split: Vec<&str> = msg_split[1].split(' ').collect();
@@ -553,8 +560,10 @@ impl App {
                                 // App::teardow_pubsub(app.clone(), 1 * 60);
                             },
                             2 => {
-                                let mut topics = app.topics.lock()
-                                    .expect("Error setting lock in topics");
+                                let mut topics = match app.topics.lock() {
+                                    Ok(topics) => topics,
+                                    Err(_) => continue
+                                };
                                 let data_split: Vec<&str> = data.msg.split('|').collect();
                                 let topic: Vec<&str> = data_split[0].split(' ').collect();
                                 let index = topics.iter().position(|(x, _, _)| *x == topic[1]);
@@ -575,12 +584,14 @@ impl App {
     fn teardow_pubsub(app: App) {
         spawn(move || {
             loop {
-                let topics = app.topics.lock()
-                    .expect("Error setting lock in topics");
+                let topics = match app.topics.lock() {
+                    Ok(topics) => topics,
+                    Err(_) => continue
+                };
                 let topics_state = topics.clone();
                 drop(topics);
                 if topics_state.len() == 0 {
-                    sleep(Duration::from_secs(NODETIMEOUT * 30));
+                    sleep(Duration::from_secs(NODETIMEOUT * 50));
                 } else {
                     let mut topic_to_delete: String = String::from("");
                     for (topic, ttl_str, publisher_addr) in topics_state.clone() {
@@ -591,7 +602,7 @@ impl App {
                             let json = app.get_json(topic.clone());
                             app.pull_bk_add_block(
                                 Data::new(
-                                    format!("END_TOPIC: {}|BID: {}|BIDDER: {}", topic, json["highest_bid"], json["highest_biddder"]), 
+                                    format!("END_TOPIC: {}|BID: {}|BIDDER: {}", topic, json["highest_bid"], json["highest_bidder"]), 
                                     2, 
                                     None
                                 )
@@ -603,8 +614,10 @@ impl App {
                         }
                     }
                     if topic_to_delete != "" {
-                        let mut topics = app.topics.lock()
-                            .expect("Error setting lock in topics");
+                        let mut topics = match app.topics.lock() {
+                            Ok(topics) => topics,
+                            Err(_) => continue
+                        };
                         let index = topics.iter().position(|(x, _, _)| *x == topic_to_delete).unwrap();
                         topics.remove(index);
                     }
@@ -613,11 +626,8 @@ impl App {
         });
     }
 
-    // TODO: 
-    //  - Retry mech 
-    //  - publish teardown (add block END_PUB ..)
     pub fn publish(&self, topic: String) -> bool {
-        let timeout_mins: i64 = 15; // 15
+        let timeout_mins: i64 = 2; // 15
         let ttl = Local::now() + chrono::Duration::minutes(timeout_mins);
         let ttl_str = format!("{}", ttl);
         let data = Data::new(
@@ -630,8 +640,7 @@ impl App {
             self.appnode.publish(topic.clone(), ttl);
 
             let topic_entry = (topic, ttl_str, self.appnode.node.get_addr());
-            let mut topics = self.topics.lock()
-                .expect("Error setting lock in topics vec!");
+            let mut topics = self.topics.lock().expect("Error settig lock in topics");
             if !topics.contains(&topic_entry) {
                 topics.push(topic_entry);
             }
@@ -645,8 +654,7 @@ impl App {
     // TODO: - Retry mech
     // Maybe add timeout before return (?)
     pub fn subscribe(&self, topic: String) -> bool {
-        let topics = self.topics.lock()
-            .expect("Error setting lock in topics vec!");
+        let topics = self.topics.lock().get_guard();
         let topics_vec: Vec<(String,String,String)> = topics.clone().into_iter().collect();
         drop(topics);
 
@@ -654,7 +662,7 @@ impl App {
         for topic_state in topics_vec {
             if topic == topic_state.0 {
                 let ttl: DateTime<Local> = topic_state.1.parse().unwrap();
-                if (ttl - Local::now()).num_minutes() > 0 {
+                if (ttl - Local::now()).num_seconds() > 0 {
                     sub = self.appnode.subscribe(topic);
                     sleep(Duration::from_secs(NODETIMEOUT));
                     break
@@ -667,21 +675,18 @@ impl App {
 
     // TODO: - Retry mech
     pub fn add_msg(&self, topic: String, msg: String) -> bool {
-        let mut status = false;
-
         // bid X (only)
         let msg_split: Vec<&str> = msg.split(' ').collect();
         let raise: usize = msg_split[1].parse::<usize>().unwrap();
         let res_msg = json!({"data": raise, "sender_addr": self.appnode.node.get_addr()});
-        status = self.appnode.add_msg(topic, res_msg.to_string());
+        let status = self.appnode.add_msg(topic, res_msg.to_string());
 
         sleep(Duration::from_secs(NODETIMEOUT));
         status
     }
 
     pub fn get_topics(&self) -> Vec<(String, String, String)> {
-        let topics = self.topics.lock()
-            .expect("Error setting lock in topics");
+        let topics = self.topics.lock().get_guard();
         let res = topics.clone();
         drop(topics);
         
@@ -708,7 +713,7 @@ impl App {
 
             let add_block = full_rpc_proc(&self.appnode.kademlia.rpc, KademliaRequest::AddBlock(block), self.bootappnode.clone());
             if let Some(KademliaResponse::Ping) = add_block {
-                println!("\t[AN{}]: Added Block info ({})", self.appnode.node.port, data.to_json());
+                // println!("\t[AN{}]: Added Block info ({})", self.appnode.node.port, data.to_json());
             } else if let Some(KademliaResponse::PingUnableProcReq) = add_block {
                 let mut blockchain = self.appnode.kademlia.blockchain.lock()
                     .expect("Error setting lock in local blockchain");

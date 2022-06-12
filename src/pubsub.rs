@@ -128,13 +128,13 @@ impl PubSubInstance {
         false
     }
 
-    pub fn verify_pubsub(&self) -> bool {
+    pub fn verify_pubsub(&self) -> bool { // TODO: diff calc
         if self.ttl == None {
             return false
         }
 
         let time = Local::now();
-        let diff = (self.ttl.unwrap() - time).num_minutes();
+        let diff = (self.ttl.unwrap() - time).num_seconds(); // num_minutes
         if diff > 0 {
             return true
         }
