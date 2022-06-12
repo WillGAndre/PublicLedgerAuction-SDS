@@ -517,9 +517,6 @@ impl App {
         false   
     }
 
-    // TODO FOR THREADS:
-    //  if lock poisned (on Err(_)) create new thread and kill current
-
     fn pull_bk(app: App) {
         spawn(move || {
             loop {
@@ -532,7 +529,8 @@ impl App {
                     };
                     let new_blocks = blockchain.get_diff_from_chains(blockchain.blocks.clone(), blocks.clone());
                     blockchain.blocks = blockchain.choose_chain(blockchain.blocks.clone(), blocks);
-                    
+                    drop(blockchain);
+
                     for block in new_blocks.clone() {
                         let data: Data = serde_json::from_str(&block.data).
                             expect("Error converting data to json");
@@ -555,9 +553,8 @@ impl App {
                                     if !topics.contains(&topic_entry) {
                                         topics.push(topic_entry);
                                     }
-                                    drop(topics);
+                                    drop(topics)
                                 }
-                                // App::teardow_pubsub(app.clone(), 1 * 60);
                             },
                             2 => {
                                 let mut topics = match app.topics.lock() {
@@ -570,6 +567,7 @@ impl App {
                                 if index != None {
                                     topics.remove(index.unwrap());
                                 }
+                                drop(topics)
                                 // bid -> data_split[1] | bidder -> data_split[2]
                             },
                             _ => {},
@@ -620,6 +618,7 @@ impl App {
                         };
                         let index = topics.iter().position(|(x, _, _)| *x == topic_to_delete).unwrap();
                         topics.remove(index);
+                        drop(topics)
                     }
                 }
             }

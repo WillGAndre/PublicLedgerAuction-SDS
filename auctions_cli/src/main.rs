@@ -108,10 +108,11 @@ impl Default for AppCli {
 fn main() -> Result<(), Box<dyn Error>> {//Box<dynapp.input_mode = InputMode::Topics; Error>> {
     let cmd_args: Vec<String> = env::args().collect();
     let port: u16 = cmd_args[1].parse::<u16>().unwrap();
+    let boot_ip: String = cmd_args[2].clone();
     let mut rng = rand::thread_rng();
     let rand_n = rng.gen_range(0..4);
     let boot_port: u16 = format!("133{}", rand_n.clone()).parse::<u16>().unwrap();
-    let boot_node: Node = Node::new(aux::get_ip().unwrap(), boot_port);
+    let boot_node: Node = Node::new(boot_ip, boot_port);
     // setup terminal
     enable_raw_mode()?;
 

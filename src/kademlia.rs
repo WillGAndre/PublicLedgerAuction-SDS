@@ -252,10 +252,11 @@ impl KademliaInstance {
 
     pub fn republish(&self) {
         let hashmap = self.hashmap.lock()
-        .expect("Error setting lock in hashmap");
+            .expect("Error setting lock in hashmap");
         for (key, value) in &*hashmap {
             self.insert(key.to_string(), value.to_string());
         }
+        drop(hashmap)
     }
 
     /**
@@ -281,6 +282,7 @@ impl KademliaInstance {
             let mut hashmap = self.hashmap.lock()
                 .expect("");
             hashmap.insert(keystr, value);
+            drop(hashmap)
 
             // println!("\t[AN{}]: Added to self DHT", self.node.port)
         } else {
@@ -331,8 +333,10 @@ impl KademliaInstance {
 
         if value == None {
             let hashmap = self.hashmap.lock()
-                    .expect("Error setting lock in hashmap");
-            let value = hashmap.get(&key);
+                .expect("Error setting lock in hashmap");
+            let hashmap_clone = hashmap.clone();
+            let value = hashmap_clone.get(&key);
+            drop(hashmap);
             if value != None {
                 return Some(value.unwrap().to_string())
             }
@@ -694,8 +698,9 @@ impl KademliaInstance {
                 let key = Key::new(keystr.to_string());
                 let hashmap = self.hashmap.lock()
                     .expect("Error setting lock in hashmap");
-                let value = hashmap.get(keystr);
-                // drop(hashmap);
+                let hashmap_clone = hashmap.clone();
+                let value = hashmap_clone.get(keystr);
+                drop(hashmap);
 
                 match value {
                     Some(val) => (
@@ -749,16 +754,19 @@ impl KademliaInstance {
             .expect("Error setting lock in routing table");
         
         if routingtable.get_bucket_index(id1) == routingtable.get_bucket_index(id2) {
+            drop(routingtable);
             return true
         }
 
+        drop(routingtable);
         false
     }
 
     pub fn print_routing_table(&self) {
         let routingtable = self.routingtable.lock()
-            .expect("Error setting lock in routing table"); // TODO: drop
+            .expect("Error setting lock in routing table");
         println!("{:?}", routingtable);
+        drop(routingtable);
     }
 
     pub fn print_hashmap(&self) -> String {
