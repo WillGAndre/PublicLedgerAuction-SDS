@@ -1,4 +1,5 @@
-Public Ledger for Auctions - System and Data Security 21/22 FCUP. 
+Public Ledger for Auctions - System and Data Security 21/22 FCUP
+
 Implemented from scratch using kademlia-dht with PoW (proof-of-work) consensus and a simple blockchain structure, with an underlying p2p network which communicates via RPC (UDPSocket).
 
 ----
